@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 type Message = { role: 'user' | 'assistant'; content: string }
-type FallbackOption = { show_fallback: boolean; fallback_item: string | null; fallback_options: string[] }
+type FallbackOption = { show_fallback: boolean; fallback_item: string | null; fallback_options: string[]; fallback_prompt?: string | null }
 
 const QUICK_REPLIES = ['让我想想', '不太确定', '好像有一点吧', '其实还好']
 
@@ -94,7 +94,10 @@ function ChatContent() {
       }
 
       const cleanReply = fullText.trim()
-      if (cleanReply) {
+
+      // 如果触发了兜底，不显示 AI 的流式原文（可能是跳跃话题的废话）
+      // 只等 meta 中的兜底选项渲染
+      if (cleanReply && !meta.show_fallback) {
         setMessages(prev => {
           const newMsgs = [...prev, { role: 'assistant' as const, content: cleanReply }]
           return newMsgs
@@ -108,7 +111,7 @@ function ChatContent() {
       }
 
       if (meta.show_fallback) {
-        setFallback({ show_fallback: true, fallback_item: (meta.fallback_item as string) || null, fallback_options: (meta.fallback_options as string[]) || [] })
+        setFallback({ show_fallback: true, fallback_item: (meta.fallback_item as string) || null, fallback_options: (meta.fallback_options as string[]) || [], fallback_prompt: (meta.fallback_prompt as string) || null })
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : '服务异常，请重试')
@@ -187,6 +190,7 @@ function ChatContent() {
         )}
         {fallback.show_fallback && (
           <div className="flex flex-col gap-2 animate-fade-in-up px-2">
+            {fallback.fallback_prompt && <p className="text-sm text-text-primary leading-relaxed mb-1">{fallback.fallback_prompt}</p>}
             <p className="text-xs text-text-subtle mb-1">选一个最接近的——</p>
             {fallback.fallback_options.map((option, i) => (
               <button key={i} onClick={() => handleFallbackSelect(i)} className="w-full text-left px-4 py-2.5 rounded-xl border border-[#E5E2DE] bg-white/70 text-sm text-text-primary hover:bg-white hover:border-accent/40 transition-all duration-300">

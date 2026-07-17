@@ -439,6 +439,7 @@ export async function POST(request: NextRequest) {
           newItemRounds = 0
           newCurrentConfidenceScore = 0
           sessionReply = q9Item.fallback_prompt
+          sessionReply = q9Item.fallback_prompt
           console.log(`[COSMO chat] Risk confirmed — triggering Q9 fallback`)
         } else if (hasSoftFallback) {
           // 防御：如果第一轮回答就加 [~]，说明 AI 太激进，忽略标记
@@ -647,6 +648,7 @@ export async function POST(request: NextRequest) {
         show_fallback,
         fallback_item,
         fallback_options,
+        fallback_prompt: show_fallback && item ? item.fallback_prompt : null,
         is_done: isDone,
         risk_detected: false,  // no modal — all risk handling is via natural conversation
         risk_type: null,
@@ -786,6 +788,7 @@ async function handleSoftFallbackResponse(
         show_fallback,
         fallback_item,
         fallback_options,
+        fallback_prompt: show_fallback && item ? item.fallback_prompt : null,
         is_done: isDone,
         risk_detected: false,
         risk_type: null,
