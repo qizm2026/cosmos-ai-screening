@@ -438,6 +438,7 @@ export async function POST(request: NextRequest) {
           newCurrentItemIndex = 8
           newItemRounds = 0
           newCurrentConfidenceScore = 0
+          sessionReply = q9Item.fallback_prompt
           console.log(`[COSMO chat] Risk confirmed — triggering Q9 fallback`)
         } else if (hasSoftFallback) {
           // 防御：如果第一轮回答就加 [~]，说明 AI 太激进，忽略标记
@@ -446,6 +447,8 @@ export async function POST(request: NextRequest) {
             newItemRounds = 1
             newFollowUpCount = 0
           } else {
+            // 替换回复为软兜底文案（去掉 AI 可能的跳跃话题文字）
+            sessionReply = cleanReply
             newItemRounds = 0
             newFollowUpCount = 0
             newConsecutiveDirectFallbacks = 0
@@ -469,6 +472,8 @@ export async function POST(request: NextRequest) {
             show_fallback = true
             fallback_item = item.id
             fallback_options = [...item.fallback_options_original]
+            // 替换回复为兜底提问文案，不展示 AI 可能跳跃话题的文字
+            sessionReply = item.fallback_prompt
             const newConsecutive = workingSession.consecutive_direct_fallbacks + 1
             newConsecutiveDirectFallbacks = newConsecutive
             newSkipSoftFallback = newConsecutive >= 2
@@ -486,6 +491,8 @@ export async function POST(request: NextRequest) {
             show_fallback = true
             fallback_item = item.id
             fallback_options = [...item.fallback_options_original]
+            // 替换回复为兜底提问文案
+            sessionReply = item.fallback_prompt
             newConsecutiveLowConfidence += 1
             // PRD §4.6 连续低把握跳过规则：连续2次→后续全部跳过软性提示
             if (newConsecutiveLowConfidence >= 2) {
@@ -501,6 +508,8 @@ export async function POST(request: NextRequest) {
             show_fallback = true
             fallback_item = item.id
             fallback_options = [...item.fallback_options_original]
+            // 替换回复为兜底提问文案
+            sessionReply = item.fallback_prompt
             newConsecutiveLowConfidence += 1
             if (newConsecutiveLowConfidence >= 2) {
               newSkipSoftFallback = true
@@ -692,6 +701,7 @@ async function handleSoftFallbackResponse(
       let fallback_item: string | null = null
       let fallback_options: string[] | null = null
       let newCurrentItemIndex = session.current_item_index
+      let sessionReply = cleanReply
 
       if (item) {
         if (hasFallbackMarker) {
@@ -699,6 +709,8 @@ async function handleSoftFallbackResponse(
           show_fallback = true
           fallback_item = item.id
           fallback_options = [...item.fallback_options_original]
+          // 替换回复为兜底提问文案
+          sessionReply = item.fallback_prompt
           console.log(`[COSMO soft-fallback] Item ${item.id}: user vague, triggering hard fallback`)
         } else {
           // Default: advance
@@ -735,7 +747,6 @@ async function handleSoftFallbackResponse(
       )
 
       let isDone = false
-      let sessionReply = cleanReply
       if (allCovered) {
         isDone = true
         const closingMsg = getClosingMessage(session.risk_status)
