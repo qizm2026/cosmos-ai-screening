@@ -154,11 +154,9 @@ function ChatContent() {
     <main className="min-h-dvh flex flex-col max-w-2xl mx-auto">
       <div className="flex items-center justify-between px-4 py-3 border-b border-[#E5E2DE]/50">
         <span className="text-xs text-text-subtle tracking-wider">{conversationDone ? '对话结束' : '对话中'}</span>
-        {conversationDone && (
-          <button onClick={handleViewReport} className="text-xs text-accent tracking-wider hover:text-accent/80 transition-colors font-medium">
-            查看报告
-          </button>
-        )}
+        <button onClick={handleViewReport} className="text-xs text-accent tracking-wider hover:text-accent/80 transition-colors font-medium">
+          查看报告
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 scrollbar-hide">
