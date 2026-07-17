@@ -721,8 +721,15 @@ async function handleSoftFallbackResponse(
       if (allCovered) {
         isDone = true
         const closingMsg = getClosingMessage(session.risk_status)
-        enqueue('\n\n' + closingMsg)
-        sessionReply = cleanReply + '\n\n' + closingMsg
+
+        const aiReplyEndsWithQuestion = /[？?]\s*$/.test(cleanReply)
+        if (aiReplyEndsWithQuestion) {
+          enqueue('\n\n' + closingMsg)
+          sessionReply = closingMsg
+        } else {
+          enqueue('\n\n' + closingMsg)
+          sessionReply = cleanReply + '\n\n' + closingMsg
+        }
       }
 
       updateSession(sessionId, {
@@ -783,24 +790,23 @@ async function handleRiskContinue(
   // If all items already covered, just close
   if (allCovered) {
     const closingMsg = getClosingMessage(session.risk_status)
+    const reply = transitionText + '\n\n' + closingMsg
     updateSession(sessionId, {
       phase: 'done',
       risk_status: session.risk_status,
       messages: [
         ...session.messages,
-        { role: 'assistant', content: transitionText + '\n\n' + closingMsg, timestamp: now },
+        { role: 'assistant', content: reply, timestamp: now },
       ],
     })
-    return createStreamResponse(transitionText + '\n\n' + closingMsg, {
+    return NextResponse.json({
+      reply,
       show_fallback: false,
       fallback_item: null,
       fallback_options: null,
       is_done: true,
-      risk_detected: false,
-      risk_type: null,
-      risk_intervention: null,
-      pause_message: null,
-      hotline: null,
+      messages: session.messages.concat({ role: 'assistant' as const, content: reply, timestamp: now }).map(m => ({ role: m.role, content: m.content })),
+      phase: 'done',
     })
   }
 
@@ -900,16 +906,14 @@ async function handleFallbackScore(
 
     console.log('[COSMO chat] Fallback complete, all 9 covered - closing')
 
-    return createStreamResponse(closingMessage, {
+    return NextResponse.json({
+      reply: closingMessage,
       show_fallback: false,
       fallback_item: null,
       fallback_options: null,
       is_done: true,
-      risk_detected: false,
-      risk_type: null,
-      risk_intervention: null,
-      pause_message: null,
-      hotline: null,
+      messages: updatedMessages.concat({ role: 'assistant' as const, content: closingMessage, timestamp: now }).map(m => ({ role: m.role, content: m.content })),
+      phase: 'done',
     })
   }
 

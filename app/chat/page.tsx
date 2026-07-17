@@ -97,14 +97,15 @@ function ChatContent() {
       if (cleanReply) {
         setMessages(prev => {
           const newMsgs = [...prev, { role: 'assistant' as const, content: cleanReply }]
-          // Check if this message signals conversation end
-          if (meta.is_done) {
-            setTimeout(() => setConversationDone(true), 100)
-          }
           return newMsgs
         })
       }
       setStreamingText('')
+
+      // 防御性处理：无论消息是否为空，is_done 都应该触发按钮
+      if (meta.is_done) {
+        setTimeout(() => setConversationDone(true), 100)
+      }
 
       if (meta.show_fallback) {
         setFallback({ show_fallback: true, fallback_item: (meta.fallback_item as string) || null, fallback_options: (meta.fallback_options as string[]) || [] })
