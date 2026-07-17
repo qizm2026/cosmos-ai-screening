@@ -440,24 +440,42 @@ export async function POST(request: NextRequest) {
           newCurrentConfidenceScore = 0
           console.log(`[COSMO chat] Risk confirmed — triggering Q9 fallback`)
         } else if (hasSoftFallback) {
-          // AI used soft fallback — wait for student to confirm/correct
-          newItemRounds = 0
-          newFollowUpCount = 0
-          newConsecutiveDirectFallbacks = 0
-          newSkipSoftFallback = false
-          newConsecutiveLowConfidence = 0
-          newCurrentConfidenceScore = 0
-          console.log(`[COSMO chat] Item ${item.id}: [~] soft fallback — waiting for student response`)
+          // 防御：如果第一轮回答就加 [~]，说明 AI 太激进，忽略标记
+          if (newItemRounds <= 1) {
+            console.log(`[COSMO chat] Item ${item.id}: AI triggered [~] at round ${newItemRounds} — too early, ignoring marker`)
+            newItemRounds = 1
+            newFollowUpCount = 0
+          } else {
+            newItemRounds = 0
+            newFollowUpCount = 0
+            newConsecutiveDirectFallbacks = 0
+            newSkipSoftFallback = false
+            newConsecutiveLowConfidence = 0
+            newCurrentConfidenceScore = 0
+            console.log(`[COSMO chat] Item ${item.id}: [~] soft fallback — waiting for student response`)
+          }
         } else if (hasFallbackMarker) {
-          show_fallback = true
-          fallback_item = item.id
-          fallback_options = [...item.fallback_options]
-          const newConsecutive = workingSession.consecutive_direct_fallbacks + 1
-          newConsecutiveDirectFallbacks = newConsecutive
-          newSkipSoftFallback = newConsecutive >= 2
-          newCurrentConfidenceScore = 0
-          newConsecutiveLowConfidence = 0
-          console.log(`[COSMO chat] Item ${item.id}: AI triggered hard fallback`)
+          // AI 主动加了硬兜底标记
+          // 防御：如果这是第一轮（item_rounds <= 1），说明 AI 太激进，忽略标记正常推进
+          if (newItemRounds <= 1) {
+            console.log(`[COSMO chat] Item ${item.id}: AI triggered [?] at round ${newItemRounds} — too early, ignoring marker`)
+            if (newItemRounds === 1) {
+              newItemRounds = 2
+              newFollowUpCount = 1
+            } else {
+              newItemRounds = 1
+            }
+          } else {
+            show_fallback = true
+            fallback_item = item.id
+            fallback_options = [...item.fallback_options]
+            const newConsecutive = workingSession.consecutive_direct_fallbacks + 1
+            newConsecutiveDirectFallbacks = newConsecutive
+            newSkipSoftFallback = newConsecutive >= 2
+            newCurrentConfidenceScore = 0
+            newConsecutiveLowConfidence = 0
+            console.log(`[COSMO chat] Item ${item.id}: AI triggered hard fallback`)
+          }
         } else if (newItemRounds >= 2) {
           // === 关键修复：第2轮回答后，代码层检测模糊度（PRD §4.6）===
           const vagueness = detectAnswerVagueness(userMessage)

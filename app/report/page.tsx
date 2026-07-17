@@ -3,6 +3,13 @@
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
+// 报告暂存：同一会话的报告缓存，避免重复生成
+const reportCache = new Map<string, {
+  condensed_sentence: string
+  status_analysis: string
+  suggestions: { intro: string; bullets: string[]; footer: string | null }
+}>()
+
 function ReportContent() {
   const router = useRouter()
   const params = useSearchParams()
@@ -21,6 +28,14 @@ function ReportContent() {
 
   const doGenerate = useCallback(async () => {
     if (!sessionId) { setError('缺少会话信息'); setLoading(false); return }
+
+    // 先检查缓存
+    const cached = reportCache.get(sessionId)
+    if (cached) {
+      setReport(cached)
+      setLoading(false)
+      return
+    }
 
     setLoading(true)
     setLoadingPhase('score')
@@ -48,6 +63,8 @@ function ReportContent() {
 
       const data = await reportRes.json()
       setReport(data)
+      // 存入缓存
+      reportCache.set(sessionId, data)
     } catch (e) {
       setError(e instanceof Error ? e.message : '报告生成出错，请刷新重试')
     } finally {
