@@ -442,13 +442,12 @@ export async function POST(request: NextRequest) {
           sessionReply = q9Item.fallback_prompt
           console.log(`[COSMO chat] Risk confirmed — triggering Q9 fallback`)
         } else if (hasSoftFallback) {
-          // 防御：如果第一轮回答就加 [~]，说明 AI 太激进，忽略标记
-          if (newItemRounds <= 1) {
-            console.log(`[COSMO chat] Item ${item.id}: AI triggered [~] at round ${newItemRounds} — too early, ignoring marker`)
+          // 软兜底：AI 加了 [~]。只在追问后采纳
+          if (newItemRounds === 0) {
+            // 第一轮就加 [~] — 太激进，忽略
+            console.log(`[COSMO chat] Item ${item.id}: AI triggered [~] at first ask — too early, ignoring`)
             newItemRounds = 1
-            newFollowUpCount = 0
           } else {
-            // 替换回复为软兜底文案（去掉 AI 可能的跳跃话题文字）
             sessionReply = cleanReply
             newItemRounds = 0
             newFollowUpCount = 0
@@ -459,67 +458,50 @@ export async function POST(request: NextRequest) {
             console.log(`[COSMO chat] Item ${item.id}: [~] soft fallback — waiting for student response`)
           }
         } else if (hasFallbackMarker) {
-          // AI 主动加了硬兜底标记
-          // 防御：如果这是第一轮（item_rounds <= 1），说明 AI 太激进，忽略标记正常推进
-          if (newItemRounds <= 1) {
-            console.log(`[COSMO chat] Item ${item.id}: AI triggered [?] at round ${newItemRounds} — too early, ignoring marker`)
-            if (newItemRounds === 1) {
-              newItemRounds = 2
-              newFollowUpCount = 1
-            } else {
-              newItemRounds = 1
-            }
+          // AI 加了硬兜底标记。
+          // item_rounds 含义：0=初次提问 / 1=追问过一次
+          // 如果 item_rounds >= 1，说明 AI 确实追问过，采纳标记
+          // 如果 item_rounds === 0，说明 AI 在第一轮就加了标记，太激进，忽略
+          if (newItemRounds === 0) {
+            // AI 第一次提问就加了 [?] — 太激进，忽略标记，正常推进
+            console.log(`[COSMO chat] Item ${item.id}: AI triggered [?] at first ask — too early, ignoring`)
+            newItemRounds = 1
           } else {
+            // AI 追问后加了 [?] — 采纳
             show_fallback = true
             fallback_item = item.id
             fallback_options = [...item.fallback_options_original]
-            // 替换回复为兜底提问文案，不展示 AI 可能跳跃话题的文字
             sessionReply = item.fallback_prompt
+            updatedCoverage[item.id as ItemId] = 'fallback'
+            newItemAnswerQuality[item.id as ItemId] = 'insufficient'
             const newConsecutive = workingSession.consecutive_direct_fallbacks + 1
             newConsecutiveDirectFallbacks = newConsecutive
             newSkipSoftFallback = newConsecutive >= 2
+            newItemRounds = 0
+            newFollowUpCount = 0
             newCurrentConfidenceScore = 0
             newConsecutiveLowConfidence = 0
             console.log(`[COSMO chat] Item ${item.id}: AI triggered hard fallback`)
           }
-        } else if (newItemRounds >= 2) {
-          // === 关键修复：第2轮回答后，代码层检测模糊度（PRD §4.6）===
+        } else if (newItemRounds >= 1) {
+          // 用户已经回答过，AI 本轮给了追问机会（没加兜底标记）
+          // → 检查用户本轮回答质量
           const vagueness = detectAnswerVagueness(userMessage)
           newCurrentConfidenceScore = vagueness.confidenceScore
 
           if (vagueness.isVague && vagueness.confidenceScore <= 1) {
-            // 回答模糊且把握度低(≤1) → 跳过软性提示，直接硬兜底
+            // 模糊 → 硬兜底
             show_fallback = true
             fallback_item = item.id
             fallback_options = [...item.fallback_options_original]
-            // 替换回复为兜底提问文案
             sessionReply = item.fallback_prompt
-            newConsecutiveLowConfidence += 1
-            // PRD §4.6 连续低把握跳过规则：连续2次→后续全部跳过软性提示
-            if (newConsecutiveLowConfidence >= 2) {
-              newSkipSoftFallback = true
-            }
-            newItemRounds = 0
-            newFollowUpCount = 0
             updatedCoverage[item.id as ItemId] = 'fallback'
             newItemAnswerQuality[item.id as ItemId] = 'insufficient'
-            console.log(`[COSMO chat] Item ${item.id}: round 2 vague (confidence=${vagueness.confidenceScore}), forcing hard fallback. Low-conf streak: ${newConsecutiveLowConfidence}`)
-          } else if (vagueness.isVague && vagueness.confidenceScore === 2) {
-            // 把握度中(2)但在第2轮→时间紧迫，走硬兜底
-            show_fallback = true
-            fallback_item = item.id
-            fallback_options = [...item.fallback_options_original]
-            // 替换回复为兜底提问文案
-            sessionReply = item.fallback_prompt
             newConsecutiveLowConfidence += 1
-            if (newConsecutiveLowConfidence >= 2) {
-              newSkipSoftFallback = true
-            }
+            if (newConsecutiveLowConfidence >= 2) newSkipSoftFallback = true
             newItemRounds = 0
             newFollowUpCount = 0
-            updatedCoverage[item.id as ItemId] = 'fallback'
-            newItemAnswerQuality[item.id as ItemId] = 'partial'
-            console.log(`[COSMO chat] Item ${item.id}: round 2 medium confidence (2), defaulting to hard fallback`)
+            console.log(`[COSMO chat] Item ${item.id}: round 2 vague (confidence=${vagueness.confidenceScore}), forcing hard fallback`)
           } else {
             // 信息充分 → 正常推进
             updatedCoverage[item.id as ItemId] = 'answered'
@@ -531,30 +513,8 @@ export async function POST(request: NextRequest) {
             newConsecutiveLowConfidence = 0
             newSkipSoftFallback = false
             lastCoverageUpdate = { item: item.id as ItemId, status: 'answered' }
-            console.log(`[COSMO chat] Item ${item.id}: advancing to ${newCurrentItemIndex} (quality=${newItemAnswerQuality[item.id as ItemId]})`)
+            console.log(`[COSMO chat] Item ${item.id}: advancing to ${newCurrentItemIndex}`)
           }
-        } else if (newItemRounds >= 1) {
-          // 第一轮回答：轻量检测，更新计数 + 为下一轮 prompt 注入提示
-          const vagueness = detectAnswerVagueness(userMessage)
-          newCurrentConfidenceScore = vagueness.confidenceScore
-
-          if (vagueness.isVague && vagueness.confidenceScore <= 1) {
-            newConsecutiveLowConfidence += 1
-            if (newConsecutiveLowConfidence >= 2) {
-              newSkipSoftFallback = true
-            }
-            console.log(`[COSMO chat] Item ${item.id}: round 1 vague (confidence=${vagueness.confidenceScore}), low-conf streak: ${newConsecutiveLowConfidence}`)
-          } else {
-            newConsecutiveLowConfidence = 0
-          }
-
-          newItemRounds = 2
-          newFollowUpCount = 1
-          console.log(`[COSMO chat] Item ${item.id}: follow-up round → round 2`)
-        } else {
-          // item_rounds=0 — AI just asked, waiting for user answer
-          newItemRounds = 1
-          console.log(`[COSMO chat] Item ${item.id}: question asked, waiting for user answer`)
         }
       }
 
