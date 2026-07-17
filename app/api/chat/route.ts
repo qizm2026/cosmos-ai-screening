@@ -434,7 +434,7 @@ export async function POST(request: NextRequest) {
           const q9Item = PHQ9.items[8]
           show_fallback = true
           fallback_item = q9Item.id
-          fallback_options = [...q9Item.fallback_options]
+          fallback_options = [...q9Item.fallback_options_original]
           newCurrentItemIndex = 8
           newItemRounds = 0
           newCurrentConfidenceScore = 0
@@ -468,7 +468,7 @@ export async function POST(request: NextRequest) {
           } else {
             show_fallback = true
             fallback_item = item.id
-            fallback_options = [...item.fallback_options]
+            fallback_options = [...item.fallback_options_original]
             const newConsecutive = workingSession.consecutive_direct_fallbacks + 1
             newConsecutiveDirectFallbacks = newConsecutive
             newSkipSoftFallback = newConsecutive >= 2
@@ -485,7 +485,7 @@ export async function POST(request: NextRequest) {
             // 回答模糊且把握度低(≤1) → 跳过软性提示，直接硬兜底
             show_fallback = true
             fallback_item = item.id
-            fallback_options = [...item.fallback_options]
+            fallback_options = [...item.fallback_options_original]
             newConsecutiveLowConfidence += 1
             // PRD §4.6 连续低把握跳过规则：连续2次→后续全部跳过软性提示
             if (newConsecutiveLowConfidence >= 2) {
@@ -500,7 +500,7 @@ export async function POST(request: NextRequest) {
             // 把握度中(2)但在第2轮→时间紧迫，走硬兜底
             show_fallback = true
             fallback_item = item.id
-            fallback_options = [...item.fallback_options]
+            fallback_options = [...item.fallback_options_original]
             newConsecutiveLowConfidence += 1
             if (newConsecutiveLowConfidence >= 2) {
               newSkipSoftFallback = true
@@ -698,7 +698,7 @@ async function handleSoftFallbackResponse(
           // User still vague → trigger hard fallback
           show_fallback = true
           fallback_item = item.id
-          fallback_options = [...item.fallback_options]
+          fallback_options = [...item.fallback_options_original]
           console.log(`[COSMO soft-fallback] Item ${item.id}: user vague, triggering hard fallback`)
         } else {
           // Default: advance
@@ -843,7 +843,7 @@ async function handleRiskContinue(
   return createStreamResponse(transitionText, {
     show_fallback: true,
     fallback_item: q9Item.id,
-    fallback_options: [...q9Item.fallback_options],
+    fallback_options: [...q9Item.fallback_options_original],
     is_done: false,
     risk_detected: false,
     risk_type: null,
@@ -864,7 +864,7 @@ async function handleFallbackScore(
   }
 
   const scaleItem = PHQ9.items.find((i) => i.id === fallbackItem)
-  const optionText = scaleItem?.fallback_options[fallbackScore] ?? ''
+  const optionText = scaleItem?.fallback_options_original[fallbackScore] ?? ''
 
   const updatedCoverage = { ...session.coverage }
   updatedCoverage[fallbackItem as ItemId] = 'fallback'
