@@ -442,12 +442,12 @@ export async function POST(request: NextRequest) {
           sessionReply = q9Item.fallback_prompt
           console.log(`[COSMO chat] Risk confirmed — triggering Q9 fallback`)
         } else if (hasSoftFallback) {
-          // 软兜底：AI 加了 [~]。只在追问后采纳
+          // 软兜底：AI 加了 [~]
           if (newItemRounds === 0) {
-            // 第一轮就加 [~] — 太激进，忽略
+            // 第一轮就加 [~] — 太激进，忽略标记，不回退
             console.log(`[COSMO chat] Item ${item.id}: AI triggered [~] at first ask — too early, ignoring`)
-            newItemRounds = 1
           } else {
+            // 追问后加 [~] — 采纳，进入软兜底等待
             sessionReply = cleanReply
             newItemRounds = 0
             newFollowUpCount = 0
@@ -457,17 +457,11 @@ export async function POST(request: NextRequest) {
             newCurrentConfidenceScore = 0
             console.log(`[COSMO chat] Item ${item.id}: [~] soft fallback — waiting for student response`)
           }
-        } else if (hasFallbackMarker) {
-          // AI 加了硬兜底标记。
-          // item_rounds 含义：0=初次提问 / 1=追问过一次
-          // 如果 item_rounds >= 1，说明 AI 确实追问过，采纳标记
-          // 如果 item_rounds === 0，说明 AI 在第一轮就加了标记，太激进，忽略
-          if (newItemRounds === 0) {
-            // AI 第一次提问就加了 [?] — 太激进，忽略标记，正常推进
-            console.log(`[COSMO chat] Item ${item.id}: AI triggered [?] at first ask — too early, ignoring`)
-            newItemRounds = 1
-          } else {
-            // AI 追问后加了 [?] — 采纳
+        }
+
+        if (hasFallbackMarker) {
+          // AI 加了 [?] 标记。只在追问后采纳
+          if (newItemRounds >= 1) {
             show_fallback = true
             fallback_item = item.id
             fallback_options = [...item.fallback_options_original]
@@ -482,10 +476,13 @@ export async function POST(request: NextRequest) {
             newCurrentConfidenceScore = 0
             newConsecutiveLowConfidence = 0
             console.log(`[COSMO chat] Item ${item.id}: AI triggered hard fallback`)
+          } else {
+            console.log(`[COSMO chat] Item ${item.id}: AI triggered [?] at first ask — too early, ignoring`)
           }
-        } else if (newItemRounds >= 1) {
-          // 用户已经回答过，AI 本轮给了追问机会（没加兜底标记）
-          // → 检查用户本轮回答质量
+        }
+
+        // === 代码层模糊检测（始终生效，除非已被软兜底或硬兜底处理）===
+        if (!show_fallback && !session.soft_fallback_active && newItemRounds >= 1) {
           const vagueness = detectAnswerVagueness(userMessage)
           newCurrentConfidenceScore = vagueness.confidenceScore
 
@@ -501,7 +498,7 @@ export async function POST(request: NextRequest) {
             if (newConsecutiveLowConfidence >= 2) newSkipSoftFallback = true
             newItemRounds = 0
             newFollowUpCount = 0
-            console.log(`[COSMO chat] Item ${item.id}: round 2 vague (confidence=${vagueness.confidenceScore}), forcing hard fallback`)
+            console.log(`[COSMO chat] Item ${item.id}: code-layer force fallback (confidence=${vagueness.confidenceScore})`)
           } else {
             // 信息充分 → 正常推进
             updatedCoverage[item.id as ItemId] = 'answered'
@@ -515,6 +512,10 @@ export async function POST(request: NextRequest) {
             lastCoverageUpdate = { item: item.id as ItemId, status: 'answered' }
             console.log(`[COSMO chat] Item ${item.id}: advancing to ${newCurrentItemIndex}`)
           }
+        } else if (!show_fallback && newItemRounds === 0) {
+          // 第一轮回答 — 等待 AI 追问
+          newItemRounds = 1
+          console.log(`[COSMO chat] Item ${item.id}: waiting for AI to probe`)
         }
       }
 
