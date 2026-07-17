@@ -4,6 +4,8 @@ export type CoverageStatus = 'pending' | 'answered' | 'fallback'
 
 export type ItemCoverage = Record<ItemId, CoverageStatus>
 
+export type AnswerQuality = 'sufficient' | 'partial' | 'insufficient'
+
 export type Phase = 'icebreak' | 'interview' | 'done'
 
 export type Message = {
@@ -50,6 +52,12 @@ export type SessionState = {
   skip_soft_fallback: boolean
   consecutive_direct_fallbacks: number
   session_started_at: number  // PRD §4.4: 15分钟时间控制的起始时间戳
+  /** 每个条目的回答质量记录，标记对话中获得的信息充分度 */
+  item_answer_quality: Partial<Record<ItemId, AnswerQuality>>
+  /** 连续低把握(confidenceScore<=1)条目计数，实现PRD §4.6连续跳过规则 */
+  consecutive_low_confidence: number
+  /** 当前条目对话回答的把握度分数 (0-5)，0=完全模糊 3+=充分 */
+  current_confidence_score: number
 }
 
 export type RiskLevel = 'minimal' | 'mild' | 'moderate' | 'severe'
@@ -59,6 +67,8 @@ export type ItemScore = {
   score: number
   justification: string
   is_fallback: boolean
+  /** 标记该条目在对话中获取的信息是否不足（供教师报告参考） */
+  answer_insufficient?: boolean
 }
 
 export type ScoreResult = {
@@ -66,6 +76,8 @@ export type ScoreResult = {
   total_score: number
   risk_level: RiskLevel
   q9_nonzero: boolean
+  /** 信息不足但已覆盖的条目列表（供教师报告参考） */
+  insufficient_items?: ItemId[]
 }
 
 export type ReportResult = {

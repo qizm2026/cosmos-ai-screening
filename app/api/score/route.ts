@@ -54,18 +54,28 @@ export async function POST(request: NextRequest) {
   const itemScores: ItemScore[] = []
   let totalScore = 0
   let q9Nonzero = false
+  const insufficientItems: ItemId[] = []
 
   for (const key of ['Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6', 'Q7', 'Q8', 'Q9'] as ItemId[]) {
     const entry = result.scores?.[key] ?? { score: 0, reason: '评分缺失，默认 0 分', is_fallback: false }
     const score = typeof entry.score === 'number' ? Math.max(0, Math.min(3, Math.round(entry.score))) : 0
     const isFallback = entry.is_fallback || session.fallback_scores[key] !== undefined
 
+    // PRD §4.6：读取对话引擎记录的条目回答质量
+    const quality = session.item_answer_quality?.[key]
+    const answerInsufficient = quality === 'insufficient' || quality === 'partial'
+
     itemScores.push({
       item_id: key,
       score,
       justification: entry.reason || '',
       is_fallback: isFallback,
+      answer_insufficient: answerInsufficient,
     })
+
+    if (answerInsufficient) {
+      insufficientItems.push(key)
+    }
 
     totalScore += score
     if (key === 'Q9' && score > 0) q9Nonzero = true
@@ -80,11 +90,12 @@ export async function POST(request: NextRequest) {
     total_score: totalScore,
     risk_level: riskLevel,
     q9_nonzero: q9Nonzero,
+    insufficient_items: insufficientItems.length > 0 ? insufficientItems : undefined,
   }
 
   updateSession(sessionId, { score_result: scoreResult })
 
-  console.log(`[COSMO score] total=${totalScore}, risk=${riskLevel}, q9_nonzero=${q9Nonzero}`)
+  console.log(`[COSMO score] total=${totalScore}, risk=${riskLevel}, q9_nonzero=${q9Nonzero}, insufficient=${insufficientItems.join(',') || 'none'}`)
   return NextResponse.json(scoreResult)
 }
 

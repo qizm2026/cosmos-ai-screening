@@ -7,6 +7,44 @@ function buildFallbackScoresSection(fallbackScores: SessionState['fallback_score
   return entries.map(([item, score]) => `${item}: ${score}`).join(', ')
 }
 
+function buildAnswerQualitySection(session: SessionState): string {
+  const qualityMap = session.item_answer_quality ?? {}
+
+  const insufficientOnly = Object.entries(qualityMap)
+    .filter(([, q]) => q === 'insufficient')
+    .map(([id]) => id)
+
+  const partialItems = Object.entries(qualityMap)
+    .filter(([, q]) => q === 'partial')
+    .map(([id]) => id)
+
+  const allInsufficient = [...insufficientOnly, ...partialItems]
+  if (allInsufficient.length === 0) return ''
+
+  let section = `
+【对话质量标记】
+以下条目的对话获取的信息可能不充分，评分时需特别注意：`
+
+  if (insufficientOnly.length > 0) {
+    section += `
+- 信息明显不足（需格外谨慎评分）：${insufficientOnly.join('、')}`
+  }
+  if (partialItems.length > 0) {
+    section += `
+- 信息部分充分（有线索但不够完整）：${partialItems.join('、')}`
+  }
+
+  section += `
+
+对于信息不足的条目：
+- 如果对话中完全没有提及该维度的任何信息 → 给 0 分，在 reason 中注明"对话信息不足，无法判断"
+- 如果对话中有微弱线索但不足以判断严重程度 → 给 0 分，在 reason 中注明"对话信息不足"
+- 不要因为"学生没提=没问题"而默认给低分——只根据实际有的信息判断
+- 不要从模糊的回答中过度推断——宁可保守评分，也不要高估严重程度
+`
+  return section
+}
+
 function buildScoreAnchorsSection(): string {
   const lines: string[] = []
   for (const item of PHQ9.items) {
@@ -39,7 +77,7 @@ Step 4：输出分数 + 判断理由（内部使用）
 - 影响范围：是否影响学习、社交、日常功能
 - 自我觉察程度：描述越详细，往往越有意识存在
 - 语气与语境：犹豫、轻描淡写可能低估；直接具体更可信
-
+${buildAnswerQualitySection(session)}
 【各条目评分锚点】
 ${buildScoreAnchorsSection()}`)
 
