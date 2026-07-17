@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #F7F6F2;
+  --text-primary: #3A3A36;
+  --text-muted: #6A6A64;
+  --text-subtle: #A0A09A;
+  --accent: #A3B5A0;
+  --accent2: #C89580;
+  --accent3: #B0B8A8;
+  --surface: rgba(255, 255, 255, 0.70);
+  --surface-hover: rgba(255, 255, 255, 0.85);
+  --border: rgba(0, 0, 0, 0.06);
+  --border-active: rgba(163, 181, 160, 0.5);
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-urbanist), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  border-color: var(--border);
+}
+
+@layer utilities {
+  .glass-card {
+    background: rgba(255, 255, 255, 0.70);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+  }
+
+  .glass-card-hover {
+    background: rgba(255, 255, 255, 0.70);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    transition: all 400ms ease-out;
+  }
+
+  .glass-card-hover:hover {
+    background: rgba(255, 255, 255, 0.85);
+    border-color: rgba(163, 181, 160, 0.4);
+    transform: translateY(-2px);
+  }
+
+  .text-body {
+    line-height: 1.75;
+    letter-spacing: 0.01em;
+  }
+
+  .section-divider {
+    height: 1px;
+    background: linear-gradient(to right, transparent, rgba(163, 181, 160, 0.3), transparent);
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 0.4; transform: scale(0.95); }
+  50% { opacity: 0.7; transform: scale(1.05); }
+}
