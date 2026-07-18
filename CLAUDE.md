@@ -56,16 +56,18 @@ POST /api/report   ─── 生成个性化报告（JSON 模式）
 ```
 icebreak（破冰，2 轮）
   → interview（逐一覆盖 Q1→Q9）
-    → 每个条目最多 2 轮追问（item_rounds 0→1→2→advance）
+    → 每个条目：AI 提问 → 用户回答 → AI 追问 → 用户再回答
+    → 代码层模糊检测（detectAnswerVagueness）始终生效
     → AI 可通过标记控制流程：[~]软兜底 / [?]硬兜底 / [!]风险确认
+    → 标记检测与代码层兜底解耦：标记被忽略时，代码层检测仍然生效
   → 全部 9 个条目 covered（answered 或 fallback）
   → phase: 'done'，meta.is_done: true
-  → 前端显示【查看报告】按钮
+  → 前端显示【查看报告】按钮（右上角始终可见，不依赖 is_done）
 ```
 
 ## 会话结束的判定（唯一条件）
 
-**前端仅依赖 `meta.is_done`（服务端返回）。** 服务端判定逻辑（`app/api/chat/route.ts:443-455`）：
+**前端仅依赖 `meta.is_done`（服务端返回）。** 服务端判定逻辑（`app/api/chat/route.ts`）：
 
 ```typescript
 const allCovered = Object.values(updatedCoverage).every(
@@ -73,7 +75,31 @@ const allCovered = Object.values(updatedCoverage).every(
 )
 ```
 
-只有当 Q1~Q9 全部覆盖后，`is_done` 才为 `true`，AI 结束语才会被追加到消息末尾。三个代码路径（正常流、软兜底、fallback 流）均有独立的 `allCovered` 检查和遗漏话题补救逻辑。
+只有当 Q1~Q9 全部覆盖后，`is_done` 才为 `true`。三个代码路径（正常流、软兜底、fallback 流）均有独立的 `allCovered` 检查。
+`handleFallbackScore` 和 `handleRiskContinue` 的 `allCovered` 路径使用 JSON 响应（非流式）确保可靠送达。
+
+## 兜底机制（两层并行）
+
+### 第一层：AI 控制标记（LLM 自主输出）
+- `[?]` 硬性兜底 — 只在 `item_rounds >= 1`（已追问过）时被采纳，`item_rounds === 0` 时忽略
+- `[~]` 软性兜底 — 同上，追问后采纳，第一轮忽略
+
+### 第二层：代码层模糊检测（始终生效）
+- `detectAnswerVagueness(userMessage)` 检测 6 类信号词 + 模糊模式匹配
+- 返回 `confidenceScore`（0-5），≤1 直接硬兜底，=2 追问后硬兜底，≥3 正常推进
+- 触发后将 `sessionReply` 替换为 `item.fallback_prompt`（PHQ-9 原题文案）
+
+### 兜底选项统一标准
+- Q1-Q9 全部使用 PHQ-9 官方选项：「完全没有 / 有几天 / 一半以上天数 / 几乎每天」
+- 定义在 `src/lib/scales/phq9.ts` 的 `fallback_options_original` 和 `fallback_prompt`
+
+## SessionState 新增字段
+
+```typescript
+item_answer_quality: Partial<Record<ItemId, AnswerQuality>>  // 每条目信息充分度
+consecutive_low_confidence: number  // 连续低把握计数（≥2 则 skip_soft_fallback）
+current_confidence_score: number    // 当前条目把握度 0-5
+```
 
 ## 风险处理流程
 
@@ -98,7 +124,7 @@ const allCovered = Object.values(updatedCoverage).every(
 
 ## 后处理过滤器
 
-`src/lib/post-processor.ts` 在服务端对 AI 回复做最后一层过滤（正则匹配），过滤评价性表述、病理化词汇、显式话题切换、分析口吻等。高风险确认阶段（`riskConfirming`）跳过过滤以免干扰危机干预。
+`src/lib/post-processor.ts` — 8 条硬底线规则（病理化词汇 + 因果推断 + 分析口吻）。精简版，只保留提示词无法完全约束的底线，避免规则膨胀和白熊效应。高风险确认阶段跳过过滤。
 
 ## 关键类型
 
@@ -110,3 +136,11 @@ const allCovered = Object.values(updatedCoverage).every(
 - `textCompletion` — 普通文本对话（开启 thinking）
 - `jsonCompletion` — 结构化 JSON 输出（自动提示 + 多层 JSON 解析容错）
 - `createRealStreamResponse` — 流式响应，接收 `onComplete` 回调处理覆盖推进、标记检测等业务逻辑
+
+## 对话角色 Prompt（`src/lib/prompts/chat-prompt.ts`）
+
+COSMO 角色设定为学校心理老师（第四年），以叙事性自画像而非指令清单塑造人物底色——空间感（二楼拐角办公室）、职业记忆和具体信念，让 LLM 在对话中自然流露特质。进度感知按 `pendingLabels.length` 三分支（0/1/>1），最后一条目时明确告知收尾。
+
+## 报告页缓存
+
+`app/report/page.tsx` — 模块级 `reportCache`（Map），同一 session 二次进入直接从缓存读取，不重复调评分/报告 API。
