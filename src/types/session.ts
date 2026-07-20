@@ -48,15 +48,10 @@ export type SessionState = {
   asked_questions: string[]
   user_context: UserContext
   follow_up_count: number
-  soft_fallback_active: boolean
-  skip_soft_fallback: boolean
-  consecutive_direct_fallbacks: number
-  session_started_at: number  // PRD §4.4: 15分钟时间控制的起始时间戳
+  session_started_at: number  // 时间控制的起始时间戳（12分钟提醒/15分钟强制收尾）
   /** 每个条目的回答质量记录，标记对话中获得的信息充分度 */
   item_answer_quality: Partial<Record<ItemId, AnswerQuality>>
-  /** 连续低把握(confidenceScore<=1)条目计数，实现PRD §4.6连续跳过规则 */
-  consecutive_low_confidence: number
-  /** 当前条目对话回答的把握度分数 (0-5)，0=完全模糊 3+=充分 */
+  /** 当前条目对话回答的把握度分数 (0-5)，0=完全模糊 3+=充分，由代码层 detectAnswerVagueness 计算 */
   current_confidence_score: number
 }
 

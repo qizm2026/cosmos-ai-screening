@@ -21,6 +21,9 @@ function ChatContent() {
   const [conversationDone, setConversationDone] = useState(false)
   const [streamingText, setStreamingText] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // 剥离 SYS 分析块（不展示给用户）
+  const stripSysBlock = (text: string) => text.replace(/<!--SYS\n[\s\S]*?\nSYS-->/g, '').trim()
   const inputRef = useRef<HTMLInputElement>(null)
   const initRef = useRef(false)
 
@@ -85,7 +88,7 @@ function ChatContent() {
           metaBuffer += chunk
         } else {
           fullText += chunk
-          setStreamingText(fullText)
+          setStreamingText(stripSysBlock(fullText))
         }
       }
 
@@ -93,7 +96,7 @@ function ChatContent() {
         try { meta = JSON.parse(metaBuffer.trim()) } catch { meta = {} }
       }
 
-      const cleanReply = fullText.trim()
+      const cleanReply = stripSysBlock(fullText.trim())
 
       // 如果触发了兜底，不显示 AI 的流式原文（可能是跳跃话题的废话）
       // 只等 meta 中的兜底选项渲染

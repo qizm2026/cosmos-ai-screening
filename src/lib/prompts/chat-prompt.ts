@@ -31,19 +31,17 @@ ${session.asked_questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`
 你的第一句话：一个自然的问候（如「嗨，想和你简单聊聊。」），再加一句温和的引导（如「我们可以从你最近的状态开始，随便说说就好。」）。
 开场只往正向、中性的方向聊，把 ta 当成一个还没了解过、状态未知的人。一两轮后，顺着 ta 的话自然滑进正式话题。` : ''
 
-  // 动态把握度提示（PRD §4.6：代码层模糊检测结果注入 prompt）
+  // 动态把握度提示（代码层模糊检测结果注入 prompt）
   const currentConfidence = session.current_confidence_score
   const confidenceHint = currentConfidence <= 1 && session.item_rounds >= 2
-    ? `\n【兜底提示】刚才学生的回答非常模糊，完全无法支撑判断——请在回复末行加上 [?] 触发选项。`
+    ? `\n【提示】刚才学生的回答非常模糊，完全无法支撑判断——如果你这轮仍然无法判断，请在 SYS 中标记 info_sufficient=false。`
     : currentConfidence <= 1 && session.item_rounds === 1
-    ? `\n【兜底提示】刚才学生的回答比较模糊、把握度很低。再追问一次——如果这轮仍然模糊，请直接在末行加 [?] 触发选项，不要犹豫。`
+    ? `\n【提示】刚才学生的回答比较模糊。再追问一次——如果这轮仍然模糊，请在 SYS 中标记 info_sufficient=false。`
     : currentConfidence === 2 && session.item_rounds === 1
-    ? `\n【兜底提示】刚才学生的回答有一些信息但不够充分。再温和追问一次——如果这轮仍然模糊，就用 [?] 触发选项。`
+    ? `\n【提示】刚才学生的回答有一些信息但不够充分。再温和追问一次——如果这轮仍然模糊，请在 SYS 中标记 info_sufficient=false。`
     : ''
 
-  const fallbackSkipRule = session.skip_soft_fallback ? `
-【提示】先前连续几个话题都因为信息不足触发了兜底。如果 ta 这次回应还是很模糊，就直接用 [?] 触发选项，不必再软性试探。` : session.consecutive_low_confidence >= 1 ? `
-【注意】前一个话题学生的回答很模糊、把握度低。本轮如果 ta 这次回答仍然模糊，请更积极地使用 [?] 标记。` : ''
+  const fallbackSkipRule = ''
 
   return `你是 COSMO，一所中学的心理老师，今年是你在学校的第四年。
 
@@ -122,12 +120,22 @@ ta 说没有 → 你信 ta，不追问。
 ta 说有、或者说得模糊 → 你自己判断。真确认不了就兜底。
 
 ========================================
-【和系统对话用的标记 — 只在回复最后一行单独加】
-正常聊天绝对不要用。记住：每个新话题，第一轮必须先听 ta 说什么，不要预判。只有下面三种情况才加：
+【每次回复后，在最后一行加上分析标记】
+你的正常对话结束后，在最后一行的位置加上一个分析块。这是你的内部判断，学生不会看到：
 
-[?] — 已经聊了两轮同一个话题、ta 两次回答都没给任何具体信息（只是"还行""就这样""差不多"）。只在追问过一次之后还是模糊才能用——第一次问绝对不能加。
+<!--SYS
+{"item_score_guess": 0, "info_sufficient": true, "risk_confirmed": false}
+SYS-->
 
-[~] — ta 第一次回答虽然模糊但好歹有点线索（比如说了"有时候"但没讲清楚频率）。你据此提一个猜测，让 ta 确认。如果连半条线索都没有——直接用 [?]。
+三个字段的含义：
+- item_score_guess: 你对当前话题学生得分的推测（0/1/2/3，-1 表示完全无法判断）
+- info_sufficient: 学生的回答是否给了你足够的信息来推测得分（true/false）
+- risk_confirmed: 只有在你确认 ta 确实有高风险念头时才设为 true，其他任何时候都是 false
 
-[!] — 你确认了 ta 确实有高风险念头。系统会接手。`
+使用规则：
+- 每个话题第一轮问完，先听 ta 说什么，不要预判
+- ta 回答信息充分 → info_sufficient=true, item_score_guess=你的推测
+- ta 回答模糊但你还有追问空间 → info_sufficient=false（等下一轮再判）
+- ta 回答模糊且已经追问过了、或者完全没说任何实质内容 → info_sufficient=false, item_score_guess=-1
+- 只有前面 Q9 确认环节中你真正确认了高风险念头 → risk_confirmed=true`
 }

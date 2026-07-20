@@ -51,12 +51,8 @@ export function createSession(): string {
       notes: [],
     },
     follow_up_count: 0,
-    soft_fallback_active: false,
-    skip_soft_fallback: false,
-    consecutive_direct_fallbacks: 0,
     session_started_at: Date.now(),
     item_answer_quality: {},
-    consecutive_low_confidence: 0,
     current_confidence_score: 0,
   })
   return id

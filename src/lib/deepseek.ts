@@ -208,8 +208,8 @@ export function createRealStreamResponse(
           }
         }
 
-        // Send remaining buffer, stripping markers
-        const remaining = buffer.replace(/\[→\]/g, '').replace(/\[~\]/g, '').replace(/\[\?\]/g, '')
+        // Send remaining buffer
+        const remaining = buffer
         if (remaining) {
           controller.enqueue(encoder.encode(remaining))
         }

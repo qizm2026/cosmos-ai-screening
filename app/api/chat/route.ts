@@ -6,14 +6,39 @@ import { textCompletion, createStreamResponse, createRealStreamResponse } from '
 import { PHQ9 } from '@/lib/scales/phq9'
 import { detectRisk } from '@/lib/risk-detector'
 import { postProcessReply } from '@/lib/post-processor'
-// QLV removed per PRD V3.3 — question validation handled via system prompt constraints + scoring anchor matching
 
-// V3.3 closing messages — empowering, forward-looking tone (§4.8)
-const CLOSING_LOW_RISK = `今天聊到这儿。接下来，系统会为你生成一份个人报告，帮你把刚才聊到的状态整理清楚。`
+// === SYS 分析块解析 ===
+interface SysAnalysis {
+  item_score_guess: number  // 0-3 / -1=无法判断
+  info_sufficient: boolean  // 信息是否足够支撑评分
+  risk_confirmed: boolean   // AI是否确认高风险意图
+}
 
-const CLOSING_MODERATE = `今天聊到这儿。谢谢你愿意把这些感受说给我听——有些话说出来本身就需要勇气。接下来系统会为你生成一份报告，帮你把一些模糊的感受看得更清晰。`
+function parseSysBlock(text: string): SysAnalysis | null {
+  const match = text.match(/<!--SYS\n([\s\S]*?)\nSYS-->/)
+  if (!match) return null
+  try {
+    const parsed = JSON.parse(match[1])
+    return {
+      item_score_guess: typeof parsed.item_score_guess === 'number' ? parsed.item_score_guess : -1,
+      info_sufficient: parsed.info_sufficient === true,
+      risk_confirmed: parsed.risk_confirmed === true,
+    }
+  } catch {
+    return null
+  }
+}
 
-const CLOSING_SEVERE = `今天聊到这儿。你刚才说到的感受，我都听到了——你不是一个人面对这些。接下来系统会为你生成一份报告。有些力量你可能自己还没意识到，但它们已经在起作用了。之后如果需要，有人可以陪你一起往前走。`
+function stripSysBlock(text: string): string {
+  return text.replace(/<!--SYS\n[\s\S]*?\nSYS-->/g, '').trim()
+}
+
+// === 收尾话术（分级） ===
+const CLOSING_LOW_RISK = '今天聊到这儿。接下来，系统会为你生成一份个人报告，帮你把刚才聊到的状态整理清楚。'
+
+const CLOSING_MODERATE = '今天聊到这儿。谢谢你愿意把这些感受说给我听——有些话说出来本身就需要勇气。接下来系统会为你生成一份报告，帮你把一些模糊的感受看得更清晰。'
+
+const CLOSING_SEVERE = '今天聊到这儿。你刚才说到的感受，我都听到了——你不是一个人面对这些。接下来系统会为你生成一份报告。有些力量你可能自己还没意识到，但它们已经在起作用了。之后如果需要，有人可以陪你一起往前走。'
 
 function getClosingMessage(riskStatus: SessionState['risk_status']): string {
   if (riskStatus.detected && riskStatus.type === 'suicide_ideation') {
@@ -25,7 +50,7 @@ function getClosingMessage(riskStatus: SessionState['risk_status']): string {
   return CLOSING_LOW_RISK
 }
 
-// === User context extraction (heuristic) ===
+// === 用户上下文提取（启发式） ===
 function extractUserContext(message: string, current: UserContext): UserContext {
   const updated: UserContext = {
     occupation: current.occupation,
@@ -35,7 +60,6 @@ function extractUserContext(message: string, current: UserContext): UserContext 
     notes: [...current.notes],
   }
 
-  // Occupation detection
   if (!updated.occupation) {
     const occPatterns: [RegExp, string][] = [
       [/初[一二三]|七[年级]|八[年级]|九[年级]/, '初中生'],
@@ -45,44 +69,30 @@ function extractUserContext(message: string, current: UserContext): UserContext 
       [/老[师师]?/, '老师'],
     ]
     for (const [pattern, label] of occPatterns) {
-      if (pattern.test(message)) {
-        updated.occupation = label
-        break
-      }
+      if (pattern.test(message)) { updated.occupation = label; break }
     }
   }
 
-  // Age detection
   if (!updated.age) {
     const ageMatch = message.match(/(\d{1,2})\s*岁/)
     if (ageMatch) {
       const age = parseInt(ageMatch[1])
-      if (age >= 10 && age <= 60) {
-        updated.age = ageMatch[1] + '岁'
-      }
+      if (age >= 10 && age <= 60) updated.age = ageMatch[1] + '岁'
     }
   }
 
-  // Hobby detection
   const hobbyPatterns: [RegExp, string][] = [
-    [/弹吉他|弹琴|钢琴|小提琴/, '音乐'],
-    [/打篮球|踢足球|跑步|游泳|健身|打球/, '运动'],
-    [/看书|阅读|小说/, '阅读'],
-    [/画画|绘画|素描/, '绘画'],
-    [/游戏|打游戏|玩游戏/, '游戏'],
-    [/编程|写代码/, '编程'],
-    [/摄影|拍照/, '摄影'],
-    [/跳舞|舞蹈/, '舞蹈'],
+    [/弹吉他|弹琴|钢琴|小提琴/, '音乐'], [/打篮球|踢足球|跑步|游泳|健身|打球/, '运动'],
+    [/看书|阅读|小说/, '阅读'], [/画画|绘画|素描/, '绘画'],
+    [/游戏|打游戏|玩游戏/, '游戏'], [/编程|写代码/, '编程'],
+    [/摄影|拍照/, '摄影'], [/跳舞|舞蹈/, '舞蹈'],
   ]
   for (const [pattern, hobby] of hobbyPatterns) {
-    if (pattern.test(message)) {
-      if (!updated.hobbies.includes(hobby)) {
-        updated.hobbies.push(hobby)
-      }
+    if (pattern.test(message) && !updated.hobbies.includes(hobby)) {
+      updated.hobbies.push(hobby)
     }
   }
 
-  // Symptom dimension detection
   const symptomPatterns: [RegExp, string][] = [
     [/睡[不着好]|失眠|睡不[安稳]|嗜睡|睡太多/, '睡眠'],
     [/[吃不进]?食欲|吃不下|吃太多|暴食/, '食欲'],
@@ -92,17 +102,15 @@ function extractUserContext(message: string, current: UserContext): UserContext 
     [/兴趣|提不起劲|不想做/, '兴趣'],
   ]
   for (const [pattern, dim] of symptomPatterns) {
-    if (pattern.test(message)) {
-      if (!updated.mentioned_symptoms.includes(dim)) {
-        updated.mentioned_symptoms.push(dim)
-      }
+    if (pattern.test(message) && !updated.mentioned_symptoms.includes(dim)) {
+      updated.mentioned_symptoms.push(dim)
     }
   }
 
   return updated
 }
 
-// === Extract questions from AI reply for anti-repetition ===
+// === 从 AI 回复中提取问题（防重复） ===
 function extractQuestions(text: string): string[] {
   const sentences = text.split(/[。！？\n]/).map(s => s.trim()).filter(s => s.length > 5)
   const questions: string[] = []
@@ -114,101 +122,69 @@ function extractQuestions(text: string): string[] {
   return questions
 }
 
-// === 启发式模糊回答检测（PRD §4.6 把握度分级，代码层零成本兜底防护）===
+// === 模糊回答检测（代码层兜底：仅检测极短/敷衍回答）===
 function detectAnswerVagueness(message: string): {
   isVague: boolean
-  confidenceScore: number  // 0-5，映射 PRD 把握度：高≥3 / 中=2 / 低≤1
-  hasConcreteDetail: boolean
+  confidenceScore: number
 } {
   const trimmed = message.trim()
   const len = trimmed.length
 
-  // 极短回答（<6字）→ 必然模糊，把握度=0
+  // 极短回答（<6字）
   if (len < 6) {
-    return { isVague: true, confidenceScore: 0, hasConcreteDetail: false }
+    return { isVague: true, confidenceScore: 0 }
   }
 
-  // 检测6类具体信息信号
-  const hasFrequencyWord = /[每经常偶尔有时候大概大约多少几]/.test(trimmed)
-  const hasNumber = /\d/.test(trimmed)
-  const hasDuration = /[天周月年小时分钟]/.test(trimmed)
-  const hasIntensity = /[很非常特别极其比较不太有点稍微完全]/.test(trimmed)
-  const hasImpact = /[影响导致所以因为结果]/.test(trimmed)
-  const hasBehavior = /[做去干吃喝玩乐学习工作上课考试]/.test(trimmed)
-
-  const signalCount = [hasFrequencyWord, hasNumber, hasDuration,
-    hasIntensity, hasImpact, hasBehavior].filter(Boolean).length
-
-  // 模糊兜底模式：典型的回避/敷衍/不置可否表达
+  // 模糊兜底模式
   const vaguePatterns = [
-    /^(还行|还好|就那样|差不多|一般|不知道|不清楚|说不好|不清楚|没想过|没什么|都行|都可以|随便|还行吧|就这样|算了吧|不说了|说不清|不好说)[。！？.!]*$/,
+    /^(还行|还好|就那样|差不多|一般|不知道|不清楚|说不好|没想过|没什么|都行|都可以|随便|还行吧|就这样|算了吧|不说了|说不清|不好说)[。！？.!]*$/,
     /^(嗯|哦|啊|呃|哎|对|是|有|没|有吧|可能吧|大概吧|也许吧)[。！？.!]*$/,
     /^(挺好的|还行吧|就这样吧|算了吧|不说了|不知道啊)[。！？.!]*$/,
   ]
-  const matchesVaguePattern = vaguePatterns.some(p => p.test(trimmed))
-
-  if (matchesVaguePattern) {
-    return { isVague: true, confidenceScore: 0, hasConcreteDetail: false }
+  if (vaguePatterns.some(p => p.test(trimmed))) {
+    return { isVague: true, confidenceScore: 0 }
   }
 
-  if (signalCount >= 3) {
-    // 信号丰富，把握度高
-    const confidence = Math.min(5, signalCount + 1)
-    return { isVague: false, confidenceScore: confidence, hasConcreteDetail: true }
-  }
+  // 6类信号词检测
+  const signals = [
+    /[每经常偶尔有时候大概大约多少几]/.test(trimmed),
+    /\d/.test(trimmed),
+    /[天周月年小时分钟]/.test(trimmed),
+    /[很非常特别极其比较不太有点稍微完全]/.test(trimmed),
+    /[影响导致所以因为结果]/.test(trimmed),
+    /[做去干吃喝玩乐学习工作上课考试]/.test(trimmed),
+  ]
+  const signalCount = signals.filter(Boolean).length
 
-  if (signalCount === 2) {
-    // 中等把握度——字数多则更可信
-    const confidence = len > 20 ? 3 : 2
-    return { isVague: false, confidenceScore: confidence, hasConcreteDetail: true }
-  }
-
-  if (signalCount === 1) {
-    return { isVague: true, confidenceScore: 1, hasConcreteDetail: false }
-  }
-
-  // 0 个信号但字数>＝6：可能是纯描述性但无具体信息 → 低把握
-  return { isVague: true, confidenceScore: 0, hasConcreteDetail: false }
+  if (signalCount >= 3) return { isVague: false, confidenceScore: Math.min(5, signalCount + 1) }
+  if (signalCount === 2) return { isVague: false, confidenceScore: len > 20 ? 3 : 2 }
+  if (signalCount === 1) return { isVague: true, confidenceScore: 1 }
+  return { isVague: true, confidenceScore: 0 }
 }
 
-export type ChatResponse = {
-  reply: string
-  show_fallback: boolean
-  phase: string
-  fallback_item: string | null
-  fallback_options: string[] | null
-  is_done: boolean
-  risk_detected: boolean
-  risk_type: string | null
-  risk_intervention: string | null
-  pause_message: string | null
-  hotline: string | null
-}
+// ===================================================================
+// POST /api/chat — 核心对话接口
+// ===================================================================
 
 export async function POST(request: NextRequest) {
   const body = await request.json()
 
   const sessionId = body.session_id as string
-  if (!sessionId) {
-    return NextResponse.json({ error: 'Missing session_id' }, { status: 400 })
-  }
+  if (!sessionId) return NextResponse.json({ error: 'Missing session_id' }, { status: 400 })
 
   const session = getSession(sessionId)
-  if (!session) {
-    return NextResponse.json({ error: 'Session not found' }, { status: 404 })
-  }
+  if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 })
 
-  // === Handle continue/pause after risk intervention ===
+  // === 风险干预后继续 ===
   if (body.risk_action === 'continue') {
     return handleRiskContinue(sessionId, session)
   }
 
   const userMessage = (body.user_message as string) || ''
   const isInit = body.init === true
-  const isEdit = body.is_edit === true
   const now = Date.now()
 
-  // Guard: 对话已结束，优雅拒绝而非报错，让前端重置为「查看报告」状态
+  // Guard: 对话已结束
   if (session.phase === 'done' && userMessage && !isInit) {
     console.log('[COSMO chat] Session done, returning done state')
     return NextResponse.json({
@@ -218,7 +194,7 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  // === Init: if session is done, return history without calling AI ===
+  // Init: session done → 直接返回历史
   if (isInit && session.phase === 'done') {
     console.log('[COSMO chat] Init: session done, returning history')
     return NextResponse.json({
@@ -228,11 +204,7 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  // === Handle soft fallback response ===
-  if (session.soft_fallback_active && userMessage && !isInit) {
-    return handleSoftFallbackResponse(sessionId, session, userMessage, now)
-  }
-
+  // === 兜底选项提交 ===
   if (body.fallback_item && typeof body.fallback_score === 'number') {
     return handleFallbackScore(sessionId, session, body.fallback_item, body.fallback_score)
   }
@@ -241,11 +213,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Missing user_message' }, { status: 400 })
   }
 
-  // === Risk Detection ===
-  // No modal popup — pure natural conversation confirmation
-  // Step 1: detectRisk → enter confirming phase → AI confirms via riskConfirmingBlock
-  // Step 2: AI outputs [!] → trigger Q9 fallback → after Q9 done, enter soothing phase
-  // Step 3: Soothing rounds → then resume normal interview
+  // === 风险检测（无弹窗，纯自然对话确认） ===
   let riskDetected = session.risk_status.detected
   let riskType = session.risk_status.type
   let riskConfirming = session.risk_status.confirming
@@ -264,19 +232,18 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // === Risk confirmation: if still confirming AND user repeats risk keywords, escalate ===
+  // 风险确认阶段用户再次触发 → 自动确认
   if (riskConfirming && userMessage) {
     const confirmResult = detectRisk(userMessage)
     if (confirmResult.detected) {
-      // User repeated high-risk content → confirmed
       riskConfirming = false
       riskIntervened = true
       soothingRounds = 3
-      console.log(`[COSMO risk] User repeated high-risk content — auto-confirmed, triggering Q9 fallback`)
+      console.log('[COSMO risk] User repeated high-risk content — auto-confirmed, triggering Q9 fallback')
     }
   }
 
-  // === Soothing phase: count down rounds ===
+  // 缓和阶段倒计时
   if (!isInit && session.risk_status.soothing_rounds > 0) {
     soothingRounds = session.risk_status.soothing_rounds - 1
     if (soothingRounds === 0) {
@@ -284,86 +251,32 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // === is_edit: roll back last round ===
-  let workingSession = session
-
-  if (isEdit && session.messages.length >= 2) {
-    const rolledBackMessages = session.messages.slice(0, -2)
-    const rolledBackCoverage = { ...session.coverage }
-    let rolledBackIndex = session.current_item_index
-    let rolledBackRounds = session.item_rounds
-    let rolledBackFollowUps = session.follow_up_count
-
-    if (session.item_rounds === 0 && session.current_item_index > 0) {
-      rolledBackIndex = session.current_item_index - 1
-      rolledBackRounds = 0
-      rolledBackFollowUps = 0
-      const prevItemId = PHQ9.items[rolledBackIndex]?.id as ItemId
-      if (prevItemId) {
-        rolledBackCoverage[prevItemId] = 'pending'
-        console.log('[COSMO chat] Edit rollback: reset', prevItemId, '-> pending, back to index', rolledBackIndex)
-      }
-    } else {
-      rolledBackRounds = Math.max(0, session.item_rounds - 1)
-      rolledBackFollowUps = Math.max(0, session.follow_up_count - 1)
-      console.log('[COSMO chat] Edit rollback: same item, rounds', session.item_rounds, '->', rolledBackRounds)
-    }
-
-    const rolledBackAsked = [...session.asked_questions]
-    if (rolledBackAsked.length > 0) {
-      rolledBackAsked.pop()
-    }
-
-    workingSession = {
-      ...session,
-      messages: rolledBackMessages,
-      coverage: rolledBackCoverage,
-      last_coverage_update: null,
-      current_item_index: rolledBackIndex,
-      item_rounds: rolledBackRounds,
-      follow_up_count: rolledBackFollowUps,
-      asked_questions: rolledBackAsked,
-      phase: session.phase === 'done' ? 'interview' : session.phase,
-      risk_status: { ...session.risk_status, detected: false, type: null, intervention_text: null },
-    }
-    riskDetected = false
-    riskType = null
-  }
-
-  // === Risk confirmation (Phase 2) is now handled in onComplete via AI [!] marker ===
-  // (Bug C fix: semantic judgment replaces regex-based second-pass detection)
-
-  // === Extract user context from user message ===
-  let updatedUserContext = workingSession.user_context
+  // === 提取用户上下文 ===
+  let updatedUserContext = session.user_context
   if (!isInit && userMessage) {
-    updatedUserContext = extractUserContext(userMessage, workingSession.user_context)
-    if (updatedUserContext !== workingSession.user_context) {
-      console.log('[COSMO context] Updated:', JSON.stringify(updatedUserContext))
-    }
+    updatedUserContext = extractUserContext(userMessage, session.user_context)
   }
 
-  // === Normal message handling with REAL STREAMING ===
+  // === 构建消息和 Prompt ===
   const updatedMessages: SessionState['messages'] = isInit
-    ? workingSession.messages
-    : [...workingSession.messages, { role: 'user' as const, content: userMessage, timestamp: now }]
+    ? session.messages
+    : [...session.messages, { role: 'user' as const, content: userMessage, timestamp: now }]
 
   const systemPrompt = buildChatSystemPrompt({
-    ...workingSession,
+    ...session,
     user_context: updatedUserContext,
   })
 
-  // === Time control (PRD §4.4: 15-minute limit) ===
-  const elapsedMinutes = (Date.now() - workingSession.session_started_at) / 60000
+  // === 时间控制（12分钟提醒 / 15分钟强制收尾） ===
+  const elapsedMinutes = (Date.now() - session.session_started_at) / 60000
   const timePressureNote = elapsedMinutes > 12
     ? (elapsedMinutes > 15
-      ? `\n\n【时间提醒】对话已超过15分钟。请立即完成剩余话题——对每个还未覆盖的话题直接问一次，信息不足就用 [?] 触发选项。`
+      ? '\n\n【时间提醒】对话已超过15分钟。请立即完成剩余话题——对每个还未覆盖的话题直接问一次，如果信息不足就在 SYS 中标记 info_sufficient=false。'
       : `\n\n【时间提醒】对话已接近尾声（约${Math.round(elapsedMinutes)}分钟），请尽快完成剩余话题。`)
     : ''
 
-  const finalSystemPrompt = workingSession.risk_status.intervened
-    ? systemPrompt + `\n[Note] User expressed difficult feelings earlier. Use a gentler tone, avoid probing risk details. Transition naturally to a lighter topic.` + timePressureNote
-    : riskConfirming
-    ? systemPrompt + timePressureNote
+  const finalSystemPrompt = session.risk_status.intervened
+    ? systemPrompt + '\n[Note] User expressed difficult feelings earlier. Use a gentler tone, avoid probing risk details. Transition naturally to a lighter topic.' + timePressureNote
     : systemPrompt + timePressureNote
 
   console.log('[COSMO chat] system prompt length:', finalSystemPrompt.length)
@@ -373,7 +286,7 @@ export async function POST(request: NextRequest) {
     ...updatedMessages.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
   ]
 
-  // === Real streaming: forward DeepSeek tokens to client immediately ===
+  // === 流式响应 ===
   return createRealStreamResponse(
     {
       messages: dialogMessages,
@@ -382,55 +295,43 @@ export async function POST(request: NextRequest) {
       useThinking: false,
     },
     async (fullText: string, enqueue: (text: string) => void) => {
-      // === Post-processing (runs after AI stream completes) ===
+      // === 解析 AI 分析 JSON ===
+      const sys = parseSysBlock(fullText)
+      const cleanReply = stripSysBlock(fullText)
 
-      // === Marker detection ===
-      const hasFallbackMarker = fullText.includes('[?]')
-      const hasSoftFallback = fullText.includes('[~]')
-      let cleanReply = fullText
-        .replace(/\[→\]/g, '').replace(/\[~\]/g, '').replace(/\[\?\]/g, '').replace(/\[!\]/g, '').trim()
+      // === 后处理过滤（风险确认阶段跳过） ===
+      const postResult = postProcessReply(cleanReply, session.risk_status.confirming)
+      let sessionReply = postResult.cleanedText
 
-      // === Post-process filter (skip during risk confirmation to avoid interfering) ===
-      const postResult = postProcessReply(cleanReply, workingSession.risk_status.confirming)
-      if (postResult.filtered) {
-        cleanReply = postResult.cleanedText
+      // === 风险确认：AI SYS 标记 risk_confirmed 或代码层自动确认 ===
+      const aiRiskConfirmed = sys?.risk_confirmed === true && !session.risk_status.intervened
+      const autoRiskConfirmed = riskIntervened && !session.risk_status.intervened
+      const shouldTriggerQ9 = aiRiskConfirmed || autoRiskConfirmed
+
+      if (riskIntervened && session.risk_status.confirming) {
+        riskConfirming = false
       }
 
-      // === Risk escalation: if risk was auto-confirmed or AI marked [!], trigger Q9 fallback ===
-      const shouldTriggerQ9 = riskIntervened && !workingSession.risk_status.intervened
+      // === 提取问题（防重复） ===
+      const newQuestions = extractQuestions(sessionReply)
+      const updatedAskedQuestions = [...session.asked_questions, ...newQuestions]
 
-      if (riskIntervened && workingSession.risk_status.confirming) {
-        riskConfirming = false  // clear confirming when moving to intervened
-      }
-
-      // === Extract questions for anti-repetition ===
-      const newQuestions = extractQuestions(cleanReply)
-      const updatedAskedQuestions = [...workingSession.asked_questions, ...newQuestions]
-
-      // === Coverage advancement (PRD §4.4: AI-driven with code-layer vagueness safeguard) ===
-      //   item_rounds=0: AI just asked → rounds=1, wait for answer
-      //   item_rounds=1: first answer → AI can probe deeper (natural follow-up)
-      //   item_rounds=2: second answer → code-layer vagueness check before advancing
-      const updatedCoverage = { ...workingSession.coverage }
-      const item = PHQ9.items[workingSession.current_item_index]
+      // === 覆盖推进逻辑 ===
+      const updatedCoverage = { ...session.coverage }
+      const item = PHQ9.items[session.current_item_index]
       let fallback_item: string | null = null
       let fallback_options: string[] | null = null
       let show_fallback = false
-      let newCurrentItemIndex = workingSession.current_item_index
-      let newItemRounds = workingSession.item_rounds
-      let newFollowUpCount = workingSession.follow_up_count
-      let lastCoverageUpdate: SessionState['last_coverage_update'] = workingSession.last_coverage_update
-      let sessionReply = cleanReply
-      let newConsecutiveDirectFallbacks = workingSession.consecutive_direct_fallbacks
-      let newSkipSoftFallback = workingSession.skip_soft_fallback
+      let newCurrentItemIndex = session.current_item_index
+      let newItemRounds = session.item_rounds
+      let newFollowUpCount = session.follow_up_count
+      let lastCoverageUpdate = session.last_coverage_update
+      let newItemAnswerQuality = { ...session.item_answer_quality }
+      let newCurrentConfidenceScore = session.current_confidence_score
 
-      // 新增：回答质量追踪（PRD §4.6 把握度分级）
-      let newItemAnswerQuality = { ...workingSession.item_answer_quality }
-      let newConsecutiveLowConfidence = workingSession.consecutive_low_confidence
-      let newCurrentConfidenceScore = workingSession.current_confidence_score
-
-      if (workingSession.phase === 'interview' && item) {
+      if (session.phase === 'interview' && item) {
         if (shouldTriggerQ9) {
+          // 高风险确认 → 触发 Q9 兜底
           const q9Item = PHQ9.items[8]
           show_fallback = true
           fallback_item = q9Item.id
@@ -439,90 +340,67 @@ export async function POST(request: NextRequest) {
           newItemRounds = 0
           newCurrentConfidenceScore = 0
           sessionReply = q9Item.fallback_prompt
-          sessionReply = q9Item.fallback_prompt
-          console.log(`[COSMO chat] Risk confirmed — triggering Q9 fallback`)
-        } else if (hasSoftFallback) {
-          // 软兜底：AI 加了 [~]
-          if (newItemRounds === 0) {
-            // 第一轮就加 [~] — 太激进，忽略标记，不回退
-            console.log(`[COSMO chat] Item ${item.id}: AI triggered [~] at first ask — too early, ignoring`)
-          } else {
-            // 追问后加 [~] — 采纳，进入软兜底等待
-            sessionReply = cleanReply
-            newItemRounds = 0
-            newFollowUpCount = 0
-            newConsecutiveDirectFallbacks = 0
-            newSkipSoftFallback = false
-            newConsecutiveLowConfidence = 0
-            newCurrentConfidenceScore = 0
-            console.log(`[COSMO chat] Item ${item.id}: [~] soft fallback — waiting for student response`)
-          }
-        }
-
-        if (hasFallbackMarker) {
-          // AI 加了 [?] 标记。只在追问后采纳
-          if (newItemRounds >= 1) {
-            show_fallback = true
-            fallback_item = item.id
-            fallback_options = [...item.fallback_options_original]
-            sessionReply = item.fallback_prompt
-            updatedCoverage[item.id as ItemId] = 'fallback'
-            newItemAnswerQuality[item.id as ItemId] = 'insufficient'
-            const newConsecutive = workingSession.consecutive_direct_fallbacks + 1
-            newConsecutiveDirectFallbacks = newConsecutive
-            newSkipSoftFallback = newConsecutive >= 2
-            newItemRounds = 0
-            newFollowUpCount = 0
-            newCurrentConfidenceScore = 0
-            newConsecutiveLowConfidence = 0
-            console.log(`[COSMO chat] Item ${item.id}: AI triggered hard fallback`)
-          } else {
-            console.log(`[COSMO chat] Item ${item.id}: AI triggered [?] at first ask — too early, ignoring`)
-          }
-        }
-
-        // === 代码层模糊检测（始终生效，除非已被软兜底或硬兜底处理）===
-        if (!show_fallback && !session.soft_fallback_active && newItemRounds >= 1) {
+          console.log('[COSMO chat] Risk confirmed — triggering Q9 fallback')
+        } else if (sys && !sys.info_sufficient && newItemRounds >= 1) {
+          // AI 判定信息不足 + 已追问过 → 硬兜底
+          show_fallback = true
+          fallback_item = item.id
+          fallback_options = [...item.fallback_options_original]
+          sessionReply = item.fallback_prompt
+          updatedCoverage[item.id as ItemId] = 'fallback'
+          newItemAnswerQuality[item.id as ItemId] = 'insufficient'
+          newItemRounds = 0
+          newFollowUpCount = 0
+          newCurrentConfidenceScore = 0
+          console.log(`[COSMO chat] Item ${item.id}: AI reports insufficient — triggering hard fallback`)
+        } else if (sys && !sys.info_sufficient && newItemRounds === 0) {
+          // AI 判定信息不足但刚第一轮问完 → 给一次追问机会
+          newItemRounds = 1
+          console.log(`[COSMO chat] Item ${item.id}: AI reports insufficient at first ask — allowing one probe`)
+        } else if (sys && sys.info_sufficient) {
+          // AI 判定信息充分 → 正常推进
+          updatedCoverage[item.id as ItemId] = 'answered'
+          newItemAnswerQuality[item.id as ItemId] = sys.item_score_guess >= 0 ? 'sufficient' : 'partial'
+          newCurrentItemIndex = Math.min(session.current_item_index + 1, 8)
+          newItemRounds = 0
+          newFollowUpCount = 0
+          lastCoverageUpdate = { item: item.id as ItemId, status: 'answered' }
+          console.log(`[COSMO chat] Item ${item.id}: AI reports sufficient — advancing to ${newCurrentItemIndex}`)
+        } else if (!sys && newItemRounds >= 1) {
+          // SYS 解析失败 + 已追问 → 代码层模糊检测兜底
           const vagueness = detectAnswerVagueness(userMessage)
           newCurrentConfidenceScore = vagueness.confidenceScore
 
           if (vagueness.isVague && vagueness.confidenceScore <= 1) {
-            // 模糊 → 硬兜底
             show_fallback = true
             fallback_item = item.id
             fallback_options = [...item.fallback_options_original]
             sessionReply = item.fallback_prompt
             updatedCoverage[item.id as ItemId] = 'fallback'
             newItemAnswerQuality[item.id as ItemId] = 'insufficient'
-            newConsecutiveLowConfidence += 1
-            if (newConsecutiveLowConfidence >= 2) newSkipSoftFallback = true
             newItemRounds = 0
             newFollowUpCount = 0
-            console.log(`[COSMO chat] Item ${item.id}: code-layer force fallback (confidence=${vagueness.confidenceScore})`)
+            console.log(`[COSMO chat] Item ${item.id}: SYS missing + code-layer force fallback (confidence=${vagueness.confidenceScore})`)
           } else {
-            // 信息充分 → 正常推进
             updatedCoverage[item.id as ItemId] = 'answered'
             newItemAnswerQuality[item.id as ItemId] = vagueness.confidenceScore >= 4 ? 'sufficient' : 'partial'
-            newCurrentItemIndex = Math.min(workingSession.current_item_index + 1, 8)
+            newCurrentItemIndex = Math.min(session.current_item_index + 1, 8)
             newItemRounds = 0
             newFollowUpCount = 0
-            newConsecutiveDirectFallbacks = 0
-            newConsecutiveLowConfidence = 0
-            newSkipSoftFallback = false
             lastCoverageUpdate = { item: item.id as ItemId, status: 'answered' }
-            console.log(`[COSMO chat] Item ${item.id}: advancing to ${newCurrentItemIndex}`)
+            console.log(`[COSMO chat] Item ${item.id}: SYS missing but code-layer passes — advancing to ${newCurrentItemIndex}`)
           }
-        } else if (!show_fallback && newItemRounds === 0) {
-          // 第一轮回答 — 等待 AI 追问
+        } else if (!sys && newItemRounds === 0) {
+          // SYS 解析失败 + 第一轮 → 等 AI 追问
           newItemRounds = 1
-          console.log(`[COSMO chat] Item ${item.id}: waiting for AI to probe`)
+          console.log(`[COSMO chat] Item ${item.id}: SYS missing, waiting for AI to probe`)
         }
       }
 
-      // === Phase management ===
-      let newPhase = workingSession.phase
-      if (workingSession.phase === 'icebreak') {
-        const icebreakRounds = workingSession.round + (isInit ? 0 : 1)
+      // === 阶段管理 ===
+      let newPhase = session.phase
+      if (session.phase === 'icebreak') {
+        const icebreakRounds = session.round + (isInit ? 0 : 1)
         if (icebreakRounds >= 2) {
           newPhase = 'interview'
           newCurrentItemIndex = 0
@@ -532,8 +410,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // === Missing items safeguard: only redirect when index is at boundary ===
-      // Only jump back if we've reached the end (index 8) and items are still pending
+      // === 遗漏条目安全网 ===
       if (newPhase === 'interview' && newCurrentItemIndex >= 8) {
         const anyPending = (Object.keys(updatedCoverage) as ItemId[])
           .find(k => updatedCoverage[k] === 'pending')
@@ -555,29 +432,25 @@ export async function POST(request: NextRequest) {
       if (allCovered) {
         newPhase = 'done'
         isDone = true
-        const closingMsg = getClosingMessage(workingSession.risk_status)
+        const closingMsg = getClosingMessage(session.risk_status)
 
-        // 如果 AI 回复末尾是问句，说明 AI 不知道这是最后一轮仍提了新问题
-        // → 丢弃 AI 原始回复，只显示收尾语，避免"新问题+收尾语"混排
-        const aiReplyEndsWithQuestion = /[？?]\s*$/.test(cleanReply)
+        const aiReplyEndsWithQuestion = /[？?]\s*$/.test(sessionReply)
         if (aiReplyEndsWithQuestion) {
           enqueue('\n\n' + closingMsg)
           sessionReply = closingMsg
-          console.log('[COSMO chat] Last item covered but AI asked new question — replaced with closing message')
         } else {
           enqueue('\n\n' + closingMsg)
-          sessionReply = cleanReply + '\n\n' + closingMsg
+          sessionReply = sessionReply + '\n\n' + closingMsg
         }
       }
 
       const coveredCount = Object.values(updatedCoverage).filter(s => s === 'answered' || s === 'fallback').length
       console.log(`[COSMO chat] Coverage: ${coveredCount}/9, done=${isDone}`)
 
-      // === Update session ===
-
+      // === 更新会话 ===
       updateSession(sessionId, {
         phase: newPhase,
-        round: isEdit ? Math.max(0, workingSession.round - 1) : (isInit ? workingSession.round : workingSession.round + 1),
+        round: isInit ? session.round : session.round + 1,
         coverage: updatedCoverage,
         last_coverage_update: lastCoverageUpdate,
         current_item_index: newCurrentItemIndex,
@@ -588,157 +461,13 @@ export async function POST(request: NextRequest) {
         risk_status: {
           detected: riskDetected,
           type: riskType,
-          intervened: riskIntervened || workingSession.risk_status.intervened,
-          intervention_text: workingSession.risk_status.intervention_text,
+          intervened: riskIntervened || session.risk_status.intervened,
+          intervention_text: session.risk_status.intervention_text,
           confirming: riskConfirming,
           soothing_rounds: soothingRounds,
         },
-        soft_fallback_active: hasSoftFallback,
-        skip_soft_fallback: newSkipSoftFallback,
-        consecutive_direct_fallbacks: newConsecutiveDirectFallbacks,
         item_answer_quality: newItemAnswerQuality,
-        consecutive_low_confidence: newConsecutiveLowConfidence,
         current_confidence_score: newCurrentConfidenceScore,
-        messages: [
-          ...updatedMessages,
-          { role: 'assistant', content: sessionReply, timestamp: now },
-        ],
-      })
-
-      return {
-        show_fallback,
-        fallback_item,
-        fallback_options,
-        fallback_prompt: show_fallback && item ? item.fallback_prompt : null,
-        is_done: isDone,
-        risk_detected: false,  // no modal — all risk handling is via natural conversation
-        risk_type: null,
-        risk_intervention: null,
-        pause_message: null,
-        hotline: null,
-      }
-    }
-  )
-}
-
-// (Risk flagging removed — risk detection now handled inline via detectRisk)
-
-// === Soft Fallback Response Handler (V3.3) ===
-// When AI outputs [~], the user responds naturally. The AI then judges
-// whether the response confirms, corrects, or remains vague.
-async function handleSoftFallbackResponse(
-  sessionId: string,
-  session: SessionState,
-  userMessage: string,
-  now: number
-) {
-  const updatedMessages: SessionState['messages'] = [
-    ...session.messages,
-    { role: 'user' as const, content: userMessage, timestamp: now },
-  ]
-
-  const systemPrompt = buildChatSystemPrompt({
-    ...session,
-    soft_fallback_active: true,
-  })
-
-  console.log('[COSMO soft-fallback] system prompt length:', systemPrompt.length)
-
-  return createRealStreamResponse(
-    {
-      messages: [
-        { role: 'system' as const, content: systemPrompt },
-        ...updatedMessages.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
-      ],
-      temperature: 0.7,
-      max_tokens: 512,
-      useThinking: false,
-    },
-    async (fullText: string, enqueue: (text: string) => void) => {
-      const hasFallbackMarker = fullText.includes('[?]')
-      const cleanReply = fullText.replace(/\[→\]/g, '').replace(/\[~\]/g, '').replace(/\[\?\]/g, '').trim()
-
-      const updatedCoverage = { ...session.coverage }
-      const item = PHQ9.items[session.current_item_index]
-      let show_fallback = false
-      let fallback_item: string | null = null
-      let fallback_options: string[] | null = null
-      let newCurrentItemIndex = session.current_item_index
-      let sessionReply = cleanReply
-
-      if (item) {
-        if (hasFallbackMarker) {
-          // User still vague → trigger hard fallback
-          show_fallback = true
-          fallback_item = item.id
-          fallback_options = [...item.fallback_options_original]
-          // 替换回复为兜底提问文案
-          sessionReply = item.fallback_prompt
-          console.log(`[COSMO soft-fallback] Item ${item.id}: user vague, triggering hard fallback`)
-        } else {
-          // Default: advance
-          updatedCoverage[item.id as ItemId] = 'answered'
-          newCurrentItemIndex = Math.min(session.current_item_index + 1, 8)
-          console.log(`[COSMO soft-fallback] Item ${item.id}: advancing to ${newCurrentItemIndex}`)
-        }
-      }
-
-      // 记录软兜底阶段的回答质量
-      const softFallbackQuality: Partial<Record<ItemId, AnswerQuality>> = {}
-      if (item) {
-        softFallbackQuality[item.id as ItemId] = hasFallbackMarker ? 'insufficient' : 'partial'
-      }
-
-      // === Missing items safeguard: only at boundary ===
-      if (newCurrentItemIndex >= 8) {
-        const anyPending = (Object.keys(updatedCoverage) as ItemId[])
-          .find(k => updatedCoverage[k] === 'pending')
-        if (anyPending) {
-          const pendingIndex = PHQ9.items.findIndex(it => it.id === anyPending)
-          if (pendingIndex >= 0 && pendingIndex !== newCurrentItemIndex) {
-            newCurrentItemIndex = pendingIndex
-            console.log(`[COSMO soft-fallback] End reached, pending ${anyPending} — jumping back`)
-          }
-        }
-      }
-
-      const newQuestions = extractQuestions(cleanReply)
-      const updatedAskedQuestions = [...session.asked_questions, ...newQuestions]
-
-      const allCovered = Object.values(updatedCoverage).every(
-        (s) => s === 'answered' || s === 'fallback'
-      )
-
-      let isDone = false
-      if (allCovered) {
-        isDone = true
-        const closingMsg = getClosingMessage(session.risk_status)
-
-        const aiReplyEndsWithQuestion = /[？?]\s*$/.test(cleanReply)
-        if (aiReplyEndsWithQuestion) {
-          enqueue('\n\n' + closingMsg)
-          sessionReply = closingMsg
-        } else {
-          enqueue('\n\n' + closingMsg)
-          sessionReply = cleanReply + '\n\n' + closingMsg
-        }
-      }
-
-      updateSession(sessionId, {
-        phase: allCovered ? 'done' : 'interview',
-        round: session.round + 1,
-        coverage: updatedCoverage,
-        current_item_index: newCurrentItemIndex,
-        item_rounds: 0,
-        follow_up_count: 0,
-        soft_fallback_active: false,
-        skip_soft_fallback: session.skip_soft_fallback,
-        consecutive_direct_fallbacks: hasFallbackMarker ? session.consecutive_direct_fallbacks + 1 : 0,
-        last_coverage_update: updatedCoverage[item?.id as ItemId] === 'answered' ? { item: item?.id as ItemId, status: 'answered' } : null,
-        asked_questions: updatedAskedQuestions,
-        item_answer_quality: { ...session.item_answer_quality, ...softFallbackQuality },
-        consecutive_low_confidence: hasFallbackMarker ? session.consecutive_low_confidence + 1 : 0,
-        current_confidence_score: 0,
         messages: [
           ...updatedMessages,
           { role: 'assistant', content: sessionReply, timestamp: now },
@@ -761,26 +490,25 @@ async function handleSoftFallbackResponse(
   )
 }
 
-// === Handle continue after risk intervention ===
+// ===================================================================
+// handleRiskContinue — 风险干预后继续
+// ===================================================================
 async function handleRiskContinue(
   sessionId: string,
   session: SessionState
 ) {
-  // PRD §7.2 Step 4: after "现在回答", directly trigger Q9 fallback
-  const q9Item = PHQ9.items[8] // Q9
+  const q9Item = PHQ9.items[8]
   const updatedCoverage = { ...session.coverage }
 
   const now = Date.now()
   const transitionText = '好，那你看看下面哪个更贴近你的感觉——'
 
-  // Mark session as intervened so risk modal doesn't reappear
   session.risk_status = { ...session.risk_status, intervened: true }
 
   const allCovered = Object.values(updatedCoverage).every(
     (s) => s === 'answered' || s === 'fallback'
   )
 
-  // If all items already covered, just close
   if (allCovered) {
     const closingMsg = getClosingMessage(session.risk_status)
     const reply = transitionText + '\n\n' + closingMsg
@@ -804,7 +532,7 @@ async function handleRiskContinue(
   }
 
   updateSession(sessionId, {
-    current_item_index: 8, // Set to Q9
+    current_item_index: 8,
     item_rounds: 2,
     follow_up_count: 0,
     coverage: updatedCoverage,
@@ -828,6 +556,9 @@ async function handleRiskContinue(
   })
 }
 
+// ===================================================================
+// handleFallbackScore — 兜底选项提交处理
+// ===================================================================
 async function handleFallbackScore(
   sessionId: string,
   session: SessionState,
@@ -844,25 +575,13 @@ async function handleFallbackScore(
   const updatedCoverage = { ...session.coverage }
   updatedCoverage[fallbackItem as ItemId] = 'fallback'
 
-  // Find next pending item after the fallback item, skipping already-covered ones
+  // 找下一个待覆盖条目
   let newCurrentItemIndex = Math.min(session.current_item_index + 1, 8)
-  // If we're at Q9 (index 8) and it's now covered, find next pending or stay
   if (updatedCoverage[PHQ9.items[newCurrentItemIndex]?.id as ItemId] !== 'pending') {
     const nextPending = PHQ9.items.findIndex(
       (item, idx) => idx > session.current_item_index && updatedCoverage[item.id as ItemId] === 'pending'
     )
     newCurrentItemIndex = nextPending >= 0 ? nextPending : newCurrentItemIndex
-  }
-
-  // === Missing items safeguard: scan from start only if at boundary ===
-  if (newCurrentItemIndex >= 8 && updatedCoverage[PHQ9.items[newCurrentItemIndex]?.id as ItemId] !== 'pending') {
-    const anyPending = PHQ9.items.findIndex(
-      (item) => updatedCoverage[item.id as ItemId] === 'pending'
-    )
-    if (anyPending >= 0 && anyPending !== newCurrentItemIndex) {
-      newCurrentItemIndex = anyPending
-      console.log(`[COSMO fallback] End reached, pending at index ${anyPending} — jumping back`)
-    }
   }
 
   const updatedFallbackScores: FallbackScores = { ...session.fallback_scores }
@@ -910,8 +629,7 @@ async function handleFallbackScore(
     })
   }
 
-  // More items to cover - call AI for next item
-  // If risk was just intervened and Q9 handled, enter soothing phase
+  // 还有待覆盖条目 → AI 继续
   const isPostRiskSoothing = session.risk_status.intervened && fallbackItem === 'Q9'
   const preUpdateSession: SessionState = {
     ...session,
@@ -924,34 +642,20 @@ async function handleFallbackScore(
   const systemPrompt = buildChatSystemPrompt(preUpdateSession)
 
   const finalSystemPrompt = isPostRiskSoothing
-    ? systemPrompt + `\n\n【缓和阶段】学生刚经历了高风险确认和Q9兜底。先用轻松的语气聊1-2句无关话题（天气、日常、兴趣爱好等），让学生情绪缓和下来。不要提任何与心理评估相关的话题，就当是在闲聊。之后自然过渡到待覆盖条目。`
+    ? systemPrompt + '\n\n【缓和阶段】学生刚经历了高风险确认和Q9兜底。先用轻松的语气聊1-2句无关话题（天气、日常、兴趣爱好等），让学生情绪缓和下来。不要提任何与心理评估相关的话题，就当是在闲聊。之后自然过渡到待覆盖条目。'
     : session.risk_status.intervened
-    ? systemPrompt + `\n[Note] User expressed difficult feelings earlier. Use gentler tone.`
+    ? systemPrompt + '\n[Note] User expressed difficult feelings earlier. Use gentler tone.'
     : systemPrompt
 
   console.log('[COSMO chat] system prompt length:', finalSystemPrompt.length)
 
   const aiReply = await callAi(finalSystemPrompt, updatedMessages)
-  if (aiReply instanceof NextResponse) {
-    return aiReply
-  }
+  if (aiReply instanceof NextResponse) return aiReply
 
-  const cleanReply = aiReply.replace(/\[→\]/g, '').replace(/\[\?\]/g, '').trim()
+  const cleanReply = stripSysBlock(aiReply)
 
   const newQuestions = extractQuestions(cleanReply)
   const updatedAskedQuestions = [...session.asked_questions, ...newQuestions]
-
-  let show_fallback = false
-  let fallback_item: string | null = null
-  let fallback_options: string[] | null = null
-  let reply = cleanReply
-
-  // AI just asked the first question about the new item — item_rounds=1, waiting for user answer
-  // Do NOT advance even if AI output [→] (user hasn't answered yet!)
-  const currentItem = PHQ9.items[newCurrentItemIndex]
-  if (currentItem) {
-    console.log(`[COSMO chat] Fallback follow-up: AI asking about ${currentItem.id}, waiting for answer`)
-  }
 
   const coveredCount = Object.values(updatedCoverage).filter(s => s === 'answered' || s === 'fallback').length
   console.log(`[COSMO chat] Coverage: ${coveredCount}/9`)
@@ -962,7 +666,7 @@ async function handleFallbackScore(
     coverage: updatedCoverage,
     last_coverage_update: { item: fallbackItem as ItemId, status: 'fallback' },
     current_item_index: newCurrentItemIndex,
-    item_rounds: 1,  // AI just asked the question, waiting for answer
+    item_rounds: 1,
     follow_up_count: 0,
     fallback_scores: updatedFallbackScores,
     asked_questions: updatedAskedQuestions,
@@ -973,14 +677,14 @@ async function handleFallbackScore(
     },
     messages: [
       ...updatedMessages,
-      { role: 'assistant', content: reply, timestamp: now },
+      { role: 'assistant', content: cleanReply, timestamp: now },
     ],
   })
 
-  return createStreamResponse(reply, {
-    show_fallback,
-    fallback_item,
-    fallback_options,
+  return createStreamResponse(cleanReply, {
+    show_fallback: false,
+    fallback_item: null,
+    fallback_options: null,
     is_done: false,
     risk_detected: false,
     risk_type: null,
@@ -989,6 +693,10 @@ async function handleFallbackScore(
     hotline: null,
   })
 }
+
+// ===================================================================
+// 工具函数
+// ===================================================================
 
 async function callAi(
   systemPrompt: string,
