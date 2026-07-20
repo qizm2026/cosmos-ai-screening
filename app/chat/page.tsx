@@ -98,9 +98,14 @@ function ChatContent() {
 
       const cleanReply = stripSysBlock(fullText.trim())
 
-      // 如果触发了兜底，不显示 AI 的流式原文（可能是跳跃话题的废话）
-      // 只等 meta 中的兜底选项渲染
-      if (cleanReply && !meta.show_fallback) {
+      // 如果触发了兜底，需要将 fallback_prompt 加入 messages 以保持聊天记录完整
+      // AI 的流式原文（可能是跳跃话题的废话）不显示，只显示原题文案
+      if (meta.show_fallback && meta.fallback_prompt) {
+        setMessages(prev => {
+          const newMsgs = [...prev, { role: 'assistant' as const, content: meta.fallback_prompt as string }]
+          return newMsgs
+        })
+      } else if (cleanReply && !meta.show_fallback) {
         setMessages(prev => {
           const newMsgs = [...prev, { role: 'assistant' as const, content: cleanReply }]
           return newMsgs
