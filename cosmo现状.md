@@ -1,3 +1,5 @@
+关于AgentMental与COSMO的决策树和记忆结构的对比：
+
 决策树不在纸上，而是在代码逻辑里。对话引擎（app/api/chat/route.ts）中有一个四分支的判断流程，每次 AI 回复后，系统解析 AI
   的"内部小纸条"（SYS 块），然后走不同的路。
 
@@ -22,6 +24,7 @@
         │   │
         │   ├─ info_sufficiency = 1 + 追问次数用完了
         │   │   → forced-choice（二选一，不兜底）
+        │   │   → 二选一后学生还是说不清 → 硬兜底
         │   │
         │   └─ info_sufficiency = 0 + 追问次数用完了
         │       → 硬兜底（展示 PHQ-9 原题 + 四个选项）

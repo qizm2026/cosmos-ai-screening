@@ -16,11 +16,13 @@ COSMO — 学生心理状态动态复核对话系统。AI 驱动的 PHQ-9 心理
 - React 18 + Tailwind CSS 3.4
 - DeepSeek API（通过 OpenAI SDK 兼容接入）
 - 会话存储：内存 Map（`globalThis.__cosmo_sessions`），无数据库，服务重启丢失
+- `next.config.mjs` 将 `openai` 标记为 `serverComponentsExternalPackages`，避免 webpack 在每个 API Route 中重复打包，显著缩短构建时间
 
 ## 常用命令
 
 ```bash
 npm run dev      # 开发服务器（默认 3000）
+npm run dev:turbo # 开发服务器（Turbopack，HMR 更快）
 npm run build    # 生产构建
 npm run start    # 生产启动
 npm run lint     # ESLint
@@ -204,8 +206,18 @@ SYS 块 item_score_guess → session.item_scores_initial
 
 通过 OpenAI SDK 调用 DeepSeek，提供三个核心函数：
 - `textCompletion` — 普通文本对话（开启 thinking）
-- `jsonCompletion` — 结构化 JSON 输出（自动提示 + 多层 JSON 解析容错）
+- `jsonCompletion` — 结构化 JSON 输出（自动提示 + 多层 JSON 解析容错，失败时抛出 `JsonParseError` 含 `rawContent`）
 - `createRealStreamResponse` — 流式响应，接收 `onComplete` 回调处理 SYS 解析、覆盖推进等业务逻辑
+
+### 流式响应协议
+
+`createRealStreamResponse` 将 AI 回复逐块发送，末尾追加元数据：
+
+```
+AI回复内容逐块流式输出...\n__META__\n{"show_fallback":false,"fallback_item":null,"is_done":false,...}
+```
+
+前端 `chat/page.tsx` 通过 `__META__` 分隔符分割流式内容和结构化元数据。`createStreamResponse`（简单流式，`handleFallbackScore`、`handleRiskContinue` 等路径使用）也遵循相同协议。
 
 ## 对话角色 Prompt（`src/lib/prompts/chat-prompt.ts`）
 
