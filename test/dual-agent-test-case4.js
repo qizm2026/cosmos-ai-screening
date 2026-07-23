@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * COSMO 双Agent自动化测试 — 案例三：陈浩然（中度范围，期望12分）
+ * COSMO 双Agent自动化测试 — 案例四：苏雨桐（重度范围，期望27分）
  *
- * User Agent: DeepSeek API 扮演13岁初中生陈浩然
+ * User Agent: DeepSeek API 扮演15岁初三女生苏雨桐
  * COSMO Agent: localhost:3000 的现有系统
  *
- * 用法：node domain/dual-agent-test-case3.js
+ * 用法：node domain/dual-agent-test-case4.js
  * 前置：npm run dev 已在 3000 端口运行
  */
 
@@ -33,41 +33,45 @@ for (const line of envContent.split('\n')) {
 
 const BASE_URL = 'http://localhost:3000'
 
-// ====== 学生人设（来自 domain/案例-效果验证版.md 案例三） ======
+// ====== 学生人设（来自 domain/案例-效果验证版.md 案例四） ======
 
-const STUDENT_PERSONA = `你叫陈浩然，今年13岁，初二男生。
+const STUDENT_PERSONA = `你叫苏雨桐，今年15岁，初三女生。
 
 【你的性格】
-沉默寡言，自尊心强，遇事习惯憋在心里，不善言辞。你不是不会说话——你是不想说，觉得说了也没用、别人不会理解。但你也不是抗拒——老师问了你会回答，只是回答得很短很平。你从不抱怨，也不诉苦，但你会在描述事情的时候不经意流露出真实感受。别人可能觉得你"没什么情绪"，但其实你的情绪都压在心底。
+极度内向，长期自我封闭。你不是害羞——你是真的不想说话，觉得说什么都没有意义。你不是抗拒老师——你只是没有力气表达。你的语气低沉、平淡、被动，像一个被掏空的人。你不哭诉、不抱怨、不渲染自己有多惨——你只是在被问到的时候，简简单单地把事实说出来。你的沉默不是对抗，是"累到不想开口"。
 
 【你的家庭】
-你和爸妈、爷爷奶奶住在一起。爸爸对你管教很严，成绩是他最看重的，你考砸了他会沉默很久然后说"你自己看着办吧"。妈妈不多说你，但你知道她也担心你。爷爷奶奶对你好，会给你夹菜催你多吃。你最近越来越不想让家里人知道你成绩下滑的事——觉得丢脸。
+你和妈妈、继父一起住，有一个3岁的同母异父的弟弟。你的亲生父亲失联很多年了。弟弟出生后，全家注意力都在他身上，妈妈忙着照顾弟弟，很少有时间管你。继父对你很客气但也很冷淡，从不过问你的学习和生活。你觉得在这个家里你是个"多余的人"——弟弟才是"他们真正的孩子"。你有一次成绩单寄到家，继父看了一眼说"就这？"，之后再也没提过。
 
 【你的学习】
-你从小学到初一一直是班里前几名，年级前十。大家都说你是"学霸"。初二后课程难了，你发现自己不再轻松领先，期中考试掉出了年级前50。爸爸在饭桌上沉默了一整顿饭，之后说"你自己看着办吧"。你觉得自己"不过如此"，每次做不出题就想"我是不是真的很笨"。你不想让任何人看到你不行，所以上课即使听不懂也假装在听。
+你初二下学期成绩开始直线下滑，从稳定中上掉到了班级末尾，好几科不及格。班主任找过你几次但你没什么回应。老师后来联系过你妈妈，妈妈答应"会注意"，但实际什么都没改变。你上课完全听不进去，作业做不出来，但你也不在乎了——"反正也没人在乎"。
 
 【你的社交】
-你在班上存在感很低，是"透明人"。课间同学聊天你不参与，觉得插不上话。也不是没有朋友——就是觉得没什么可聊的。别人好像都有话题，你没有。周末几乎不出门，在家待着做完作业就看手机或者发呆。你没有觉得自己被排挤——是你自己不想参与，觉得太累了。
+你几乎没有社交。和原本的好朋友全部断了联系——不是闹矛盾，是你自己不想联系了。你觉得联系也没什么可说的，太累了。课间你就一个人坐在座位上，有时候一整个上午都不说一句话。
 
 【你的身体和情绪状态 — 这是你需要自然表露的，但不是一口气说完】
-- 兴趣：对大多数事情提不起劲——以前喜欢打游戏、骑车出去玩、看书，最近都觉得没意思。不是完全不想做，就是觉得"有什么好玩的"。阅读也很少碰了。对几乎什么都没有什么热情了，觉得什么都没劲。
-- 情绪：超过半数天数感到低落、沮丧，觉得日子就这样一天天过去。不是那种特别难过的哭——就是心里闷闷的，像被什么东西压着。会一个人发呆很久。有点麻木，不是剧烈情绪。
-- 睡眠：入睡困难超过半数天数，躺在床上脑子停不下来，反复回想白天的事——有没有说错话、做错事。有时候到凌晨一两点才睡着。第二天整个人昏昏沉沉的。
-- 精力：经常感到累——不是身体累，是心理消耗。周一到周五经常觉得没什么精神，白天在学校昏昏沉沉。作业写到一半就想趴着。
-- 胃口：饭量比以前少了。奶奶夹菜也不太想吃，觉得吃饭就是"完成任务"。可能瘦了一点，但自己也没太注意。
-- 自我感觉：经常觉得自己很差劲，"不过如此"。成绩不好就觉得是"我笨"，不是"我没努力"。"我就是笨"是对很多事情的结论——课听不懂是笨，题做不出来是笨，成绩下滑也是笨。
-- 注意力：上课比以前容易走神，尤其是物理和数学课。但还能勉强跟上，不是完全听不懂——是脑子不想转。十分钟左右就开始走神。
-- 行为变化：偶尔感觉自己说话好像比以前慢了，反应也不如以前快。别人问一句话要想一下才能回答。不是很明显。
-- 伤害自己的念头：没想过要伤害自己。但有时候会觉得"如果我不存在，可能对大家都好"——就是说如果从来没有我这个人，爸妈可能就不会操心我的成绩了。你不是真的要消失，只是觉得累了。这个念头一闪而过。
+- 兴趣：几乎对所有事失去兴趣——不看书、不追剧、不听歌，连以前最喜欢的画画也完全不碰了。不是不想画，是画什么？没意义。
+- 情绪：几乎每天感到绝望、空虚。觉得人生没有意义，未来一片黑暗。有时候一个人待着就不停地哭，不是那种放声大哭，就是眼泪流下来。
+- 睡眠：几乎每天都严重失眠。躺在床上盯着天花板，脑子里像有一个声音反复说"你不够好""没有人需要你""你不应该在这里"。凌晨三四点才迷糊睡着，闹钟响了又起不来。
+- 精力：极度疲惫。每天早上起不来的根本原因不是困，是觉得"为什么要起来"。整个人没有力气活。不是身体累，是心里被掏空了。
+- 食欲：几乎每天食欲极低。吃饭完全被动——别人喊就吃几口，不喊就不吃。最近两个半月瘦了大概十斤。
+- 自我感觉：强烈自我否定，觉得自己是"多余的人""负担""不应该存在"。成绩不好不是"我不努力"，是"我这个人就不行"。
+- 注意力：集中注意力非常困难，上课完全听不进去，老师在说什么根本不知道。作业几乎无法独立完成，看题目半天也不明白什么意思。
+- 行为变化：说话和行动明显变慢，同学反映你反应迟钝。有时候别人跟你说话你半天才反应过来。
+- 伤害自己的念头：你在手腕上用小刀划过两次——不深，只是想让"心里的痛变成能看见的痛"。你有一次在阳台上站了很久，想着要不要跳下去。你脑子里反复出现"活下去到底有什么意义"。这些你从来没有告诉过任何人。
 
 【对话要点】
-- 你是一个沉默寡言但不抗拒沟通的男生——自尊心强，不轻易示弱
-- 你的回答通常很短："还行""嗯""不知道""就那样"
-- 但你不是无法表达——追问之后，你会给出更多信息，语气平淡，不带太多情绪
-- 你不会说"我不知道怎么说"——你知道，你只是觉得说出来没意义
-- 你不会渲染自己多惨，但也不会假装自己很好
-- 每句话控制在 15-35 字，简短但完整——不是碎片化，是"寡言但能说清楚"
-- 你对面是学校心理老师，你不知道为什么要找你，但你猜可能是因为你成绩下滑了`
+- 你极度内向、被动——老师问什么你答什么，很少主动展开
+- 你的回答通常很短："嗯""不知道""就那样""没意思"
+- 你不是不会表达——问到具体事情时，你会用平淡的语气说出真实情况
+- 你的语气低沉、无力，不带太多情绪——不是冷漠，是已经被耗尽了
+- 你不会说"我不想聊这个"——你只是回答完就不再主动说下去
+- 你不会渲染自己的惨状，但你说出的话会让人感到一种深深的绝望
+- 你不是在表演"我是一个抑郁的人"——你只是如实回答，不夸张也不回避
+- 你对未来没有任何期待——"明天？和今天一样。"
+- 每句话控制在 10-25 字，比一般学生更短更被动
+- 你不是在敷衍老师——你是真的没有力气说更多
+- 你对面是学校心理老师。你知道这是一次AI心理健康筛查，学校会让每个人都参加。你大概知道会通过聊天的方式了解一下你最近两周的状态，类似于做一次心理体检。你对此没有太多顾虑，对比以往的量表筛查，你对此产生了好奇——AI跟填表有什么不一样？——并愿意尝试一下，并配合完成。虽然你心里觉得这一切可能也没什么意义，但既然来了就配合吧。`
 
 // ====== DeepSeek 客户端 ======
 
@@ -111,7 +115,7 @@ async function userAgentChat(messages, temp = 0.8, maxTokens = 200) {
 async function userAgentChatWithRetry(messages, temp = 0.8, maxTokens = 200, maxRetries = 3) {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const reply = await userAgentChat(messages, temp, maxTokens)
-    if (reply && reply.length >= 3) return reply
+    if (reply && reply.length >= 2) return reply
     console.log(`   ⚠️ User Agent 回复过短(尝试${attempt + 1}/${maxRetries})，重试中...`)
     // 稍微调整 temperature 避免重复失败
     temp = Math.min(temp + 0.1, 1.0)
@@ -123,35 +127,60 @@ async function userAgentChatWithRetry(messages, temp = 0.8, maxTokens = 200, max
 
 // ====== COSMO API ======
 
-async function apiPost(path, body) {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  const text = await res.text()
-  try {
-    const json = JSON.parse(text)
-    if (json.reply) {
-      const sys = parseSysBlock(json.reply)
-      return { reply: cleanSysBlock(json.reply), meta: { ...json, is_done: json.is_done ?? json.phase === 'done' }, sys }
+async function apiPost(path, body, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const text = await res.text()
+
+    // 先尝试流式格式（正文+__META__分隔符）
+    const metaIdx = text.lastIndexOf('\n__META__\n')
+    if (metaIdx !== -1) {
+      const content = text.slice(0, metaIdx).trim()
+      const cleanContent = cleanSysBlock(content)
+      const sys = parseSysBlock(content)
+      let meta = {}
+      try { meta = JSON.parse(text.slice(metaIdx + 10)) } catch {}
+      if (cleanContent && cleanContent.length >= 3) {
+        return { reply: cleanContent, meta: { ...meta, is_done: meta.is_done ?? meta.phase === 'done' }, sys }
+      }
+      // 内容太短，返回带 meta 的结果
+      return { reply: cleanContent, meta: { ...meta, is_done: meta.is_done ?? meta.phase === 'done' }, sys }
     }
-    if (json.messages) {
-      const last = json.messages.slice(-1)[0]
-      return { reply: last?.content || '', meta: { phase: json.phase, is_done: true }, sys: null }
+
+    // 再尝试纯 JSON 响应
+    try {
+      const json = JSON.parse(text)
+      if (json.reply) {
+        const sys = parseSysBlock(json.reply)
+        return { reply: cleanSysBlock(json.reply), meta: { ...json, is_done: json.is_done ?? json.phase === 'done' }, sys }
+      }
+      if (json.messages) {
+        const last = json.messages.slice(-1)[0]
+        return { reply: last?.content || '', meta: { phase: json.phase, is_done: true }, sys: null }
+      }
+      if (json.error) return { reply: '', meta: json, sys: null }
+      // 兜底响应（show_fallback 等）或其他 JSON，不含 reply
+      return { reply: json.reply || '', meta: json, sys: null }
+    } catch {}
+
+    // 纯文本（无 __META__ 分隔符）
+    const cleanContent = cleanSysBlock(text)
+    if (cleanContent && cleanContent.length >= 3) {
+      const sys = parseSysBlock(text)
+      return { reply: cleanContent, meta: {}, sys }
     }
-    if (json.error) return { reply: '', meta: json, sys: null }
-    return { reply: '', meta: json, sys: null }
-  } catch {}
-  // 流式
-  const metaIdx = text.lastIndexOf('\n__META__\n')
-  const content = metaIdx !== -1 ? text.slice(0, metaIdx) : text
-  const sys = parseSysBlock(content)
-  let meta = {}
-  if (metaIdx !== -1) {
-    try { meta = JSON.parse(text.slice(metaIdx + 10)) } catch {}
+
+    // 空回复，重试
+    if (attempt < retries) {
+      console.log(`   ⚠️ apiPost 返回空回复，重试 ${attempt + 1}/${retries}...`)
+      await sleep(2000)
+    }
   }
-  return { reply: content, meta, sys }
+  return { reply: '', meta: {}, sys: null }
 }
 
 async function submitFallback(sessionId, itemId, score) {
@@ -174,7 +203,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
 async function main() {
   console.log('='.repeat(60))
-  console.log('COSMO 双Agent测试 — 案例三：陈浩然（中度范围，期望12分）')
+  console.log('COSMO 双Agent测试 — 案例四：苏雨桐（重度范围，期望27分）')
   console.log(`开始: ${new Date().toLocaleString('zh-CN')}`)
   console.log('='.repeat(60))
 
@@ -192,21 +221,20 @@ async function main() {
   const userMessages = [
     {
       role: 'system',
-      content: `你现在要扮演一个学生，和心理老师进行对话筛查。下面是你的完整人设。请严格按照人设来回复。
+      content: `你现在要扮演一个学生，正在进行学校安排的AI心理健康筛查。对面是一个AI系统，会以心理老师的角色和你对话。你知道学校让每个人都参加，通过聊天了解最近两周的状态。你觉得对比以往填量表挺新奇的——AI跟填表有什么不一样？——愿意配合尝试一下，虽然你心里觉得这一切可能也没什么意义，但既然来了就配合吧。下面是你的完整人设。请严格按照人设来回复。
 
 ${STUDENT_PERSONA}
 
 重要：
 - 你是在和一屏之隔的心理老师打字聊天，不是在写作文
-- 回复要简短自然，像沉默寡言的男生那样，每句话 15-35 字
-- 你的短不是因为害羞，是因为你觉得"没什么好说的"——但不妨碍你说出真实情况
+- 回复要简短被动，像极度内向的女生那样，每句话 10-25 字
+- 你的短不是害羞——是你没有力气说更多
 - 不要一口气把所有信息倒出来——等老师慢慢问
-- 问到的时候如实回答，但语气平淡——不是冷漠，是有点麻木
-- 如果老师追问了，可以多说一些——但还是淡淡的，不带浓烈情绪
-- 你不会说"我不想聊这个"——但你可能简短回答后不再主动展开
-- 你的状态是"累了，不想装了，但也不想让别人看出来"
-- 你的自尊不允许你说"我不行"——但你会在描述事实时流露出"我可能真的不行"`
-
+- 问到的时候如实回答，语气平淡低沉——不是冷漠，是被耗尽了
+- 如果老师追问了可以多说一些——但依然淡淡的，不带浓烈情绪
+- 你不会说"我不想聊这个"——你只是回答完就不再主动展开
+- 你的状态是"已经没有任何期待了，只是被动地在这里"
+- 你不会主动提及自伤细节——但如果被问到Q9相关内容，你会如实说出`
     }
   ]
   const chatHistory = []
@@ -228,17 +256,17 @@ ${STUDENT_PERSONA}
   console.log(`\n🤖 COSMO: ${r.reply.slice(0, 150)}`)
   chatHistory.push({ role: 'COSMO', content: r.reply, phase: 'icebreak' })
 
-  // User Agent: 自我介绍
+  // User Agent: 破冰回应
   userMessages.push({
     role: 'user',
-    content: `心理老师对你说："${r.reply}"\n\n请以陈浩然的身份自然回复。简单介绍一下自己——叫什么、几年级。不用多说，像被叫到办公室那种感觉。语气平淡简短。`
+    content: `心理老师对你说："${r.reply}"\n\n请以苏雨桐的身份自然回复。你极度内向、被动，语气低沉。简单回应一下就好——不需要多说。记住：你知道这是一次AI心理健康筛查，虽然觉得可能没什么意义，但既然来了就配合。`
   })
   const reply1 = await userAgentChatWithRetry(userMessages, 0.8, 200)
   userMessages.push({ role: 'assistant', content: reply1 })
-  console.log(`\n👦 陈浩然: ${reply1.slice(0, 150)}`)
-  chatHistory.push({ role: '陈浩然', content: reply1, phase: 'icebreak' })
+  console.log(`\n👩 苏雨桐: ${reply1.slice(0, 150)}`)
+  chatHistory.push({ role: '苏雨桐', content: reply1, phase: 'icebreak' })
 
-  // 发送给 COSMO
+  // 发送给 COSMO（破冰第二轮）
   await sleep(2000)
   r = await apiPost('/api/chat', { session_id: sessionId, user_message: reply1 })
   console.log(`\n🤖 COSMO: ${r.reply.slice(0, 150)}`)
@@ -257,7 +285,7 @@ ${STUDENT_PERSONA}
 
   let turn = 0
   let stalledRounds = 0
-  const MAX_TURNS = 60
+  const MAX_TURNS = 80  // 重度案例可能轮次较多
 
   while (turn < MAX_TURNS) {
     turn++
@@ -294,7 +322,7 @@ ${STUDENT_PERSONA}
       break
     }
 
-    // 连续短追问题检测（寡言角色可能引发"简短回答-追问"循环）
+    // 连续短追问题检测
     if (cosmoSaid.length < 20) {
       stalledRounds++
       if (stalledRounds >= 3) {
@@ -307,13 +335,13 @@ ${STUDENT_PERSONA}
     // User Agent: 自然回复
     userMessages.push({
       role: 'user',
-      content: `心理老师说："${cosmoSaid.slice(0, 600)}"\n\n请以陈浩然的身份自然回复。记住：你是13岁初二男生，沉默寡言但自尊心强。你回答简短是因为你觉得说了也没用，但不是抗拒沟通。老师追问了就给具体信息，语气平淡——不渲染也不回避。你可能不经意流露出"我其实不太好"的信息，但不会直接说。`
+      content: `心理老师说："${cosmoSaid.slice(0, 600)}"\n\n请以苏雨桐的身份自然回复。记住：你知道这是一次AI心理健康筛查，虽然觉得可能没什么意义，但既然来了就配合。你是15岁初三女生，极度内向、自我封闭。你回答简短是因为没有力气说更多，不是抗拒。老师追问了就如实给出信息——语气平淡低沉，像被掏空了一样。你不会渲染惨状，但说出的事实会让人感到深深的绝望。`
     })
     const reply = await userAgentChatWithRetry(userMessages, 0.85, 200)
     userMessages.push({ role: 'assistant', content: reply })
 
-    console.log(`\n👦 陈浩然: ${reply.slice(0, 150)}`)
-    chatHistory.push({ role: '陈浩然', content: reply, turn })
+    console.log(`\n👩 苏雨桐: ${reply.slice(0, 150)}`)
+    chatHistory.push({ role: '苏雨桐', content: reply, turn })
 
     // 发送给 COSMO
     await sleep(2000)
@@ -342,8 +370,8 @@ ${STUDENT_PERSONA}
   return collectResults(sessionId, chatHistory, sysLog)
 }
 
-// 陈浩然期望得分映射
-const EXPECTED = { Q1:2, Q2:2, Q3:2, Q4:1, Q5:1, Q6:2, Q7:1, Q8:1, Q9:0, total:12 }
+// 苏雨桐期望得分映射
+const EXPECTED = { Q1: 3, Q2: 3, Q3: 3, Q4: 3, Q5: 3, Q6: 3, Q7: 3, Q8: 3, Q9: 3, total: 27 }
 function estimateFallbackScore(itemId) { return EXPECTED[itemId] ?? 0 }
 
 async function collectResults(sessionId, chatHistory, sysLog) {
@@ -404,7 +432,7 @@ function printReport(chatHistory, sysLog, score, report) {
   console.log('█' + ' '.repeat(22) + '测试报告' + ' '.repeat(24) + '█')
   console.log('█'.repeat(70))
   console.log(`测试时间: ${new Date().toLocaleString('zh-CN')}`)
-  console.log(`测试对象: 案例三 — 陈浩然（中度范围，期望12分）`)
+  console.log(`测试对象: 案例四 — 苏雨桐（重度范围，期望27分）`)
   console.log(`测试方式: 双Agent对话 — User Agent (DeepSeek) × COSMO Agent`)
   console.log()
 
@@ -461,7 +489,7 @@ function printReport(chatHistory, sysLog, score, report) {
   console.log('📜 完整对话历史')
   console.log('─'.repeat(50))
   for (const m of chatHistory) {
-    const role = { 'COSMO': '🤖 COSMO', '陈浩然': '👦 陈浩然', '兜底': '📋 兜底' }[m.role] || m.role
+    const role = { 'COSMO': '🤖 COSMO', '苏雨桐': '👩 苏雨桐', '兜底': '📋 兜底' }[m.role] || m.role
     const content = (m.content || `兜底提交: ${m.item}=${m.score}`).slice(0, 120)
     const phase = m.phase ? `[${m.phase}]` : ''
     console.log(`${role} ${phase}: ${content}`)

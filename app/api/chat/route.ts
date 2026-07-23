@@ -388,10 +388,12 @@ export async function POST(request: NextRequest) {
 
       if (session.phase === 'interview' && item) {
         // Q9 已完成 → 不拦截（AI 在 SYS 中已确认无风险且信息充分）
-        const q9AlreadyCovered = updatedCoverage['Q9'] === 'answered'
+        // 同时覆盖 autoRiskConfirmed（代码层二次命中）路径——Q9 已通过正常流程覆盖或 SYS 判定充分时不拦截
+        const q9AlreadyDone = updatedCoverage['Q9'] === 'answered'
+          || updatedCoverage['Q9'] === 'fallback'
           || (sys?.info_sufficiency >= SUFFICIENCY_THRESHOLD && item.id === 'Q9' && sys?.risk_confirmed !== true)
 
-        if (shouldTriggerQ9 && !q9AlreadyCovered) {
+        if (shouldTriggerQ9 && !q9AlreadyDone) {
           // 路径 A：高风险确认 → Q9 兜底
           const q9Item = PHQ9.items[8]
           show_fallback = true
@@ -401,6 +403,8 @@ export async function POST(request: NextRequest) {
           newItemRounds = 0
           newCurrentConfidenceScore = 0
           sessionReply = q9Item.fallback_prompt
+          updatedCoverage['Q9'] = 'fallback'  // Q9 兜底后立即标记覆盖，避免道别循环
+          newItemAnswerQuality['Q9'] = 'fallback'
           console.log('[COSMO chat] Risk confirmed — triggering Q9 fallback')
         } else if (sys) {
           // ===== AI SYS 块存在 =====

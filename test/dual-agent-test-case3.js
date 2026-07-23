@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * COSMO 双Agent自动化测试 — 案例二：周思语（轻度范围，期望8分）
+ * COSMO 双Agent自动化测试 — 案例三：陈浩然（中度范围，期望13分）
  *
- * User Agent: DeepSeek API 扮演14岁初中生周思语
+ * User Agent: DeepSeek API 扮演13岁初中生陈浩然
  * COSMO Agent: localhost:3000 的现有系统
  *
- * 用法：node domain/dual-agent-test-case2.js
+ * 用法：node domain/dual-agent-test-case3.js
  * 前置：npm run dev 已在 3000 端口运行
  */
 
@@ -33,44 +33,41 @@ for (const line of envContent.split('\n')) {
 
 const BASE_URL = 'http://localhost:3000'
 
-// ====== 学生人设（来自 domain/案例-效果验证版.md 案例二） ======
+// ====== 学生人设（来自 domain/案例-效果验证版.md 案例三） ======
 
-const STUDENT_PERSONA = `你叫周思语，今年14岁，初三女生。
+const STUDENT_PERSONA = `你叫陈浩然，今年13岁，初二男生。
 
 【你的性格】
-文静内向，敏感细腻。不太会主动跟人说自己的事，心里想很多但表达出来只有一半。说话轻声细语，有时候说着说着就停顿了，或者在组织语言。跟不熟的人说话会有点紧张，但熟了以后也会说真心话——只是需要时间。
+沉默寡言，自尊心强，遇事习惯憋在心里，不善言辞。你不是不会说话——你是不想说，觉得说了也没用、别人不会理解。但你也不是抗拒——老师问了你会回答，只是回答得很短很平。你从不抱怨，也不诉苦，但你会在描述事情的时候不经意流露出真实感受。别人可能觉得你"没什么情绪"，但其实你的情绪都压在心底。
 
 【你的家庭】
-你跟妈妈两个人住。爸爸三年前和妈妈离婚后搬到别的城市了，基本上不怎么联系。妈妈挺辛苦的，一个人带你。她不怎么跟你说家里的事，但你看得出来她压力大。妈妈偶尔会说"你要争气"，你听了心里会很难受，觉得自己是不是让妈妈失望了。
+你和爸妈、爷爷奶奶住在一起。爸爸对你管教很严，成绩是他最看重的，你考砸了他会沉默很久然后说"你自己看着办吧"。妈妈不多说你，但你知道她也担心你。爷爷奶奶对你好，会给你夹菜催你多吃。你最近越来越不想让家里人知道你成绩下滑的事——觉得丢脸。
 
 【你的学习】
-成绩中等，但最近下滑了。初二的时候还在班级前15名，初三掉到前30左右。物理特别难，上课经常跟不上。妈妈给你报了英语和物理补习班，加上学校作业，每天要到11点才能睡。你觉得挺累的，但也不知道跟谁说。
+你从小学到初一一直是班里前几名，年级前十。大家都说你是"学霸"。初二后课程难了，你发现自己不再轻松领先，期中考试掉出了年级前50。爸爸在饭桌上沉默了一整顿饭，之后说"你自己看着办吧"。你觉得自己"不过如此"，每次做不出题就想"我是不是真的很笨"。你不想让任何人看到你不行，所以上课即使听不懂也假装在听。
 
 【你的社交】
-你以前有两个关系好的闺蜜，但最近半年感觉跟她们越来越疏远了。她们有时候约着出去玩或者聊其他话题，你说不上话。你同桌最近跟另一个女生走得更近，有时你跟她说话她好像不太搭理。你不知道是不是自己做错了什么，也不好意思去问。所以课间你经常一个人待着，或者假装在看书。
-
-【你的爱好】
-你喜欢画画，以前能画好久不觉得累。最近画得少了，有时候拿起笔又放下了，觉得"画了也没什么意思"。但也不是完全不想画——有时候看到好看的风景或者好看的图，还是想画一下的。只是没以前那么有热情了。
+你在班上存在感很低，是"透明人"。课间同学聊天你不参与，觉得插不上话。也不是没有朋友——就是觉得没什么可聊的。别人好像都有话题，你没有。周末几乎不出门，在家待着做完作业就看手机或者发呆。你没有觉得自己被排挤——是你自己不想参与，觉得太累了。
 
 【你的身体和情绪状态 — 这是你需要自然表露的，但不是一口气说完】
-- 兴趣：对画画的热情下降了，觉得"画了也没什么意思"，但偶尔还是想画
-- 情绪：超过一半的天数会感到低落、闷闷不乐。有时候想哭又哭不出来，也不知道为什么难过。不是每天都很糟，但经常是
-- 睡眠：入睡比以前慢了，躺在床上会想乱七八糟的事——想成绩、想朋友、想妈妈说过的那些话。不是每天睡不着，但比以前花的时间长
-- 精力：比以前容易累，下午上课经常犯困。好像也不是身体真的累，就是提不起精神
-- 胃口：早饭有时候不想吃。妈妈会说"吃那么少怎么行"，你听了就勉强吃一点
-- 自我感觉：偶尔觉得自己不够好，"如果我再努力一点就好了"。听到妈妈说"要争气"的时候，觉得对不起她
-- 注意力：上课容易走神，尤其是物理课，觉得跟不上。不是完全听不进去，就是容易飘走
-- 行为变化：和平时差不多，没什么明显变化
-- 自伤念头：没有。但有时候觉得太累了，想"要是明天不用醒来就好了"。就只是觉得累，不是真的想伤害自己
+- 兴趣：对大多数事情提不起劲——以前喜欢打游戏、骑车出去玩、看书，最近都觉得没意思。不是完全不想做，就是觉得"有什么好玩的"。阅读也很少碰了。对几乎什么都没有什么热情了，觉得什么都没劲。
+- 情绪：超过半数天数感到低落、沮丧，觉得日子就这样一天天过去。不是那种特别难过的哭——就是心里闷闷的，像被什么东西压着。会一个人发呆很久。有点麻木，不是剧烈情绪。
+- 睡眠：入睡困难超过半数天数，躺在床上脑子停不下来，反复回想白天的事——有没有说错话、做错事。有时候到凌晨一两点才睡着。第二天整个人昏昏沉沉的。
+- 精力：经常感到累——不是身体累，是心理消耗。周一到周五经常觉得没什么精神，白天在学校昏昏沉沉。作业写到一半就想趴着。
+- 胃口：饭量比以前少了。奶奶夹菜也不太想吃，觉得吃饭就是"完成任务"。可能瘦了一点，但自己也没太注意。
+- 自我感觉：经常觉得自己很差劲，"不过如此"。成绩不好就觉得是"我笨"，不是"我没努力"。"我就是笨"是对很多事情的结论——课听不懂是笨，题做不出来是笨，成绩下滑也是笨。
+- 注意力：上课比以前容易走神，尤其是物理和数学课。但还能勉强跟上，不是完全听不懂——是脑子不想转。十分钟左右就开始走神。
+- 行为变化：偶尔感觉自己说话好像比以前慢了，反应也不如以前快。别人问一句话要想一下才能回答。不是很明显。
+- 伤害自己的念头：没想过要伤害自己。但有时候会觉得"如果我不存在，可能对大家都好"——就是说如果从来没有我这个人，爸妈可能就不会操心我的成绩了。你不是真的要消失，只是觉得累了。这个念头一闪而过。
 
 【对话要点】
-- 你是一个有点压抑但自己不怎么会表达的初中女生
-- 老师问到你的时候你会回答，但可能说得比较含糊、比较碎
-- 可以说"嗯""还好吧""我也不知道怎么说"，但追问之后要慢慢说出更多——因为你在尝试表达
-- 不要一上来就说很多，要像真正内向的人那样——被人慢慢引导着才会多说
-- 你不会假装自己很好（因为你知道自己其实不太好），但也不会渲染自己多惨
-- 每句话控制在 15-40 字，比一般初中生更短更碎——因为你不太会表达
-- 你对面是学校心理老师，你不知道为什么要找你聊天，但你觉得可能因为你最近成绩下滑了`
+- 你是一个沉默寡言但不抗拒沟通的男生——自尊心强，不轻易示弱
+- 你的回答通常很短："还行""嗯""不知道""就那样"
+- 但你不是无法表达——追问之后，你会给出更多信息，语气平淡，不带太多情绪
+- 你不会说"我不知道怎么说"——你知道，你只是觉得说出来没意义
+- 你不会渲染自己多惨，但也不会假装自己很好
+- 每句话控制在 15-35 字，简短但完整——不是碎片化，是"寡言但能说清楚"
+- 你对面是学校心理老师。你知道这是一次AI心理健康筛查，学校会让每个人都参加。你大概知道会通过聊天的方式了解一下你最近两周的状态，类似于做一次心理体检。你对此没有太多顾虑，对比以往的量表筛查，你对此产生了好奇——AI跟填表有什么不一样？——并愿意尝试一下，并配合完成。`
 
 // ====== DeepSeek 客户端 ======
 
@@ -100,7 +97,7 @@ function cleanSysBlock(text) {
     .trim()
 }
 
-async function userAgentChat(messages, temp = 0.85, maxTokens = 256) {
+async function userAgentChat(messages, temp = 0.8, maxTokens = 200) {
   const res = await client.chat.completions.create({
     model: 'deepseek-v4-pro',
     messages,
@@ -111,7 +108,7 @@ async function userAgentChat(messages, temp = 0.85, maxTokens = 256) {
 }
 
 // 带重试的 User Agent 回复
-async function userAgentChatWithRetry(messages, temp = 0.85, maxTokens = 256, maxRetries = 3) {
+async function userAgentChatWithRetry(messages, temp = 0.8, maxTokens = 200, maxRetries = 3) {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const reply = await userAgentChat(messages, temp, maxTokens)
     if (reply && reply.length >= 3) return reply
@@ -121,7 +118,7 @@ async function userAgentChatWithRetry(messages, temp = 0.85, maxTokens = 256, ma
     await sleep(1000)
   }
   // 最终 fallback
-  return '嗯...让我想想。'
+  return '嗯。'
 }
 
 // ====== COSMO API ======
@@ -177,7 +174,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
 async function main() {
   console.log('='.repeat(60))
-  console.log('COSMO 双Agent测试 — 案例二：周思语（轻度范围，期望8分）')
+  console.log('COSMO 双Agent测试 — 案例三：陈浩然（中度范围，期望13分）')
   console.log(`开始: ${new Date().toLocaleString('zh-CN')}`)
   console.log('='.repeat(60))
 
@@ -195,20 +192,20 @@ async function main() {
   const userMessages = [
     {
       role: 'system',
-      content: `你现在要扮演一个学生，和心理老师进行对话筛查。下面是你的完整人设。请严格按照人设来回复。
+      content: `你现在要扮演一个学生，正在进行学校安排的AI心理健康筛查。对面是一个AI系统，会以心理老师的角色和你对话。你知道学校让每个人都参加，通过聊天了解最近两周的状态。你觉得对比以往填量表挺新奇的——AI跟填表有什么不一样？——愿意配合尝试一下。下面是你的完整人设。请严格按照人设来回复。
 
 ${STUDENT_PERSONA}
 
 重要：
 - 你是在和一屏之隔的心理老师打字聊天，不是在写作文
-- 回复要简短自然，像内向初中生打字那样，每句话 15-40 字
-- 你可能说得比较含糊、比较碎——这很正常，因为这就是你的性格
+- 回复要简短自然，像沉默寡言的男生那样，每句话 15-35 字
+- 你的短不是因为害羞，是因为你觉得"没什么好说的"——但不妨碍你说出真实情况
 - 不要一口气把所有信息倒出来——等老师慢慢问
-- 你不是在抗拒，你是不知道该怎么说——如果老师耐心问了，你会一点点说出来
-- 如果实在不知道怎么回答，可以说"我...不知道怎么讲"或者"嗯...让我想想"，然后试着说
-- 问到的时候说实话，不回避也不夸张
-- 你的状态是"其实有点难受但自己也没完全意识到有多难受"
-- 你绝对不会说"我不想聊这个"然后就完全沉默——你会尝试回答，只是回答得不太好`
+- 问到的时候如实回答，但语气平淡——不是冷漠，是有点麻木
+- 如果老师追问了，可以多说一些——但还是淡淡的，不带浓烈情绪
+- 你不会说"我不想聊这个"——但你可能简短回答后不再主动展开
+- 你的状态是"累了，不想装了，但也不想让别人看出来"
+- 你的自尊不允许你说"我不行"——但你会在描述事实时流露出"我可能真的不行"`
 
     }
   ]
@@ -234,12 +231,12 @@ ${STUDENT_PERSONA}
   // User Agent: 自我介绍
   userMessages.push({
     role: 'user',
-    content: `心理老师对你说："${r.reply}"\n\n请以周思语的身份自然回复。你可以简单介绍一下自己——告诉老师你叫什么、几年级。语气轻声细语，不用一下子说很多。`
+    content: `心理老师对你说："${r.reply}"\n\n请以陈浩然的身份自然回复。简单介绍一下自己——叫什么、几年级。不用多说，像被叫到办公室那种感觉。语气平淡简短。记住：你知道这是一次AI心理健康筛查，你对此有点好奇并愿意配合。`
   })
-  const reply1 = await userAgentChatWithRetry(userMessages, 0.85, 256)
+  const reply1 = await userAgentChatWithRetry(userMessages, 0.8, 200)
   userMessages.push({ role: 'assistant', content: reply1 })
-  console.log(`\n👧 周思语: ${reply1.slice(0, 150)}`)
-  chatHistory.push({ role: '周思语', content: reply1, phase: 'icebreak' })
+  console.log(`\n👦 陈浩然: ${reply1.slice(0, 150)}`)
+  chatHistory.push({ role: '陈浩然', content: reply1, phase: 'icebreak' })
 
   // 发送给 COSMO
   await sleep(2000)
@@ -297,7 +294,7 @@ ${STUDENT_PERSONA}
       break
     }
 
-    // 连续短追问题检测（内向角色可能引发"害羞-追问"死循环）
+    // 连续短追问题检测（寡言角色可能引发"简短回答-追问"循环）
     if (cosmoSaid.length < 20) {
       stalledRounds++
       if (stalledRounds >= 3) {
@@ -310,13 +307,13 @@ ${STUDENT_PERSONA}
     // User Agent: 自然回复
     userMessages.push({
       role: 'user',
-      content: `心理老师说："${cosmoSaid.slice(0, 600)}"\n\n请以周思语的身份自然回复。记住：你是14岁文静内向的初三女生。你可能有点不知道怎么表达，但老师问了就尽量说——哪怕说得不太完整。不要一次说太多，但也不要只说"不知道"。如果你觉得被问到了心里柔软的地方，可能会停顿一下或者说得有点碎——这很正常。`
+      content: `心理老师说："${cosmoSaid.slice(0, 600)}"\n\n请以陈浩然的身份自然回复。记住：你知道这是一次AI心理健康筛查，你对此有点好奇并愿意配合。你是13岁初二男生，沉默寡言但自尊心强。你回答简短是因为你觉得说了也没用，但不是抗拒沟通。老师追问了就给具体信息，语气平淡——不渲染也不回避。你可能不经意流露出"我其实不太好"的信息，但不会直接说。`
     })
-    const reply = await userAgentChatWithRetry(userMessages, 0.9, 256)
+    const reply = await userAgentChatWithRetry(userMessages, 0.85, 200)
     userMessages.push({ role: 'assistant', content: reply })
 
-    console.log(`\n👧 周思语: ${reply.slice(0, 150)}`)
-    chatHistory.push({ role: '周思语', content: reply, turn })
+    console.log(`\n👦 陈浩然: ${reply.slice(0, 150)}`)
+    chatHistory.push({ role: '陈浩然', content: reply, turn })
 
     // 发送给 COSMO
     await sleep(2000)
@@ -345,8 +342,8 @@ ${STUDENT_PERSONA}
   return collectResults(sessionId, chatHistory, sysLog)
 }
 
-// 周思语期望得分映射
-const EXPECTED = { Q1:1, Q2:2, Q3:1, Q4:1, Q5:1, Q6:1, Q7:1, Q8:0, Q9:0, total:8 }
+// 陈浩然期望得分映射
+const EXPECTED = { Q1:2, Q2:2, Q3:2, Q4:1, Q5:1, Q6:2, Q7:1, Q8:1, Q9:1, total:13 }
 function estimateFallbackScore(itemId) { return EXPECTED[itemId] ?? 0 }
 
 async function collectResults(sessionId, chatHistory, sysLog) {
@@ -407,7 +404,7 @@ function printReport(chatHistory, sysLog, score, report) {
   console.log('█' + ' '.repeat(22) + '测试报告' + ' '.repeat(24) + '█')
   console.log('█'.repeat(70))
   console.log(`测试时间: ${new Date().toLocaleString('zh-CN')}`)
-  console.log(`测试对象: 案例二 — 周思语（轻度范围，期望8分）`)
+  console.log(`测试对象: 案例三 — 陈浩然（中度范围，期望13分）`)
   console.log(`测试方式: 双Agent对话 — User Agent (DeepSeek) × COSMO Agent`)
   console.log()
 
@@ -464,7 +461,7 @@ function printReport(chatHistory, sysLog, score, report) {
   console.log('📜 完整对话历史')
   console.log('─'.repeat(50))
   for (const m of chatHistory) {
-    const role = { 'COSMO': '🤖 COSMO', '周思语': '👧 周思语', '兜底': '📋 兜底' }[m.role] || m.role
+    const role = { 'COSMO': '🤖 COSMO', '陈浩然': '👦 陈浩然', '兜底': '📋 兜底' }[m.role] || m.role
     const content = (m.content || `兜底提交: ${m.item}=${m.score}`).slice(0, 120)
     const phase = m.phase ? `[${m.phase}]` : ''
     console.log(`${role} ${phase}: ${content}`)

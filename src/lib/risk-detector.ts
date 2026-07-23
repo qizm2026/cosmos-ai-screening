@@ -65,6 +65,11 @@ export const RISK_MODAL_TEXT = {
 export function detectRisk(text: string): RiskDetectionResult {
   const normalized = text.trim()
 
+  // 否定语境快速出口：学生明确否认风险内容时，不做误匹配
+  if (/没想过|完全没有|从来没|不会想|不至于|从没想|想都没想/.test(normalized)) {
+    return { detected: false, type: null, confidence: 0 }
+  }
+
   for (const category of RISK_PATTERNS) {
     for (const pattern of category.patterns) {
       if (pattern.test(normalized)) {
