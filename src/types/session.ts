@@ -4,7 +4,7 @@ export type CoverageStatus = 'pending' | 'answered' | 'fallback'
 
 export type ItemCoverage = Record<ItemId, CoverageStatus>
 
-export type AnswerQuality = 'sufficient' | 'partial' | 'insufficient'
+export type AnswerQuality = 'sufficient' | 'partial' | 'insufficient' | 'fallback'
 
 export type Phase = 'icebreak' | 'interview' | 'done'
 
@@ -53,6 +53,30 @@ export type SessionState = {
   item_answer_quality: Partial<Record<ItemId, AnswerQuality>>
   /** 当前条目对话回答的把握度分数 (0-5)，0=完全模糊 3+=充分，由代码层 detectAnswerVagueness 计算 */
   current_confidence_score: number
+  /** Phase 2：当前条目的信息缺失维度，由 SYS 块 missing_dimensions 解析 */
+  missing_dimensions: string[]
+  /** Phase 3：已完成的条目摘要，用于后续条目的上下文感知 */
+  item_summaries: ItemSummary[]
+  /** Phase 1：对话中逐项初评分（SYS 块 item_score_guess），供全局校准阶段交叉校验 */
+  item_scores_initial: Partial<Record<ItemId, number>>
+  /** 对话停滞计数器：连续未推进覆盖的轮次数，覆盖推进时重置。用于检测道别循环等异常 */
+  stall_rounds: number
+}
+
+/** Phase 3：条目完成时的结构化摘要 */
+export type ItemSummary = {
+  item_id: ItemId
+  /** 2-3句简短摘要 */
+  summary: string
+  /** 五维信息标记（空字符串=未提及） */
+  dimensions: {
+    emotion: string
+    frequency: string
+    duration: string
+    symptom: string
+    impact: string
+  }
+  recorded_at: number
 }
 
 export type RiskLevel = 'minimal' | 'mild' | 'moderate' | 'severe'
@@ -64,6 +88,10 @@ export type ItemScore = {
   is_fallback: boolean
   /** 标记该条目在对话中获取的信息是否不足（供教师报告参考） */
   answer_insufficient?: boolean
+  /** Phase 1：对话中逐项初评分（0-3），供前端展示对比 */
+  initial_score?: number
+  /** Phase 1：全局校准说明（仅当全局校准阶段调整了初评分时填写） */
+  calibration_note?: string
 }
 
 export type ScoreResult = {
@@ -73,6 +101,8 @@ export type ScoreResult = {
   q9_nonzero: boolean
   /** 信息不足但已覆盖的条目列表（供教师报告参考） */
   insufficient_items?: ItemId[]
+  /** Phase 1：全局校准摘要，如"1个条目初评分被调整：Q1 2→1" */
+  calibration_summary?: string
 }
 
 export type ReportResult = {

@@ -54,6 +54,10 @@ export function createSession(): string {
     session_started_at: Date.now(),
     item_answer_quality: {},
     current_confidence_score: 0,
+    missing_dimensions: [],
+    item_summaries: [],
+    item_scores_initial: {},
+    stall_rounds: 0,
   })
   return id
 }

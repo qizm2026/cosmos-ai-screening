@@ -7,22 +7,80 @@ import { PHQ9 } from '@/lib/scales/phq9'
 import { detectRisk } from '@/lib/risk-detector'
 import { postProcessReply } from '@/lib/post-processor'
 
+// === 对话节奏常量（对标 AgentMental 双参数控制） ===
+/** 每条目最大追问轮次，对标 AgentMental d 参数 */
+const MAX_ITEM_ROUNDS = 2
+/** 信息充分性推进阈值，info_sufficiency >= 2 才推进，对标 AgentMental θ 参数 */
+const SUFFICIENCY_THRESHOLD = 2
+
 // === SYS 分析块解析 ===
 interface SysAnalysis {
-  item_score_guess: number  // 0-3 / -1=无法判断
-  info_sufficient: boolean  // 信息是否足够支撑评分
-  risk_confirmed: boolean   // AI是否确认高风险意图
+  item_score_guess: number   // 0-3 / -1=无法判断
+  /** 0=严重不足 / 1=部分线索 / 2=信息充分，兼容旧格式 info_sufficient: boolean */
+  info_sufficiency: number
+  risk_confirmed: boolean    // AI是否确认高风险意图
+  /** 信息缺失维度，仅 info_sufficiency <= 1 时填写 */
+  missing_dimensions?: string[]
+  /** Phase 3：条目完成时的结构化摘要，仅推进时填写 */
+  item_summary?: {
+    summary: string
+    emotion: string
+    frequency: string
+    duration: string
+    symptom: string
+    impact: string
+  }
 }
 
 function parseSysBlock(text: string): SysAnalysis | null {
-  const match = text.match(/<!--SYS\n([\s\S]*?)\nSYS-->/)
-  if (!match) return null
+  // 兼容多种格式：
+  //   <!--SYS\n{json}\nSYS-->  (标准格式)
+  //   <<SYS>>{json}<</SYS>>     (DeepSeek 常见变体)
+  //   [SYS]{json}[/SYS]         (旧格式)
+  let jsonStr: string | null = null
+
+  // 格式1：HTML注释 <!--SYS...SYS-->
+  const htmlMatch = text.match(/<!--SYS\n([\s\S]*?)\nSYS-->/)
+  if (htmlMatch) {
+    jsonStr = htmlMatch[1]
+  }
+
+  // 格式2：尖括号 <<SYS>>...<</SYS>>
+  if (!jsonStr) {
+    const angleMatch = text.match(/<<SYS>>\s*([\s\S]*?)\s*<{1,2}\/SYS>{1,2}/)
+    if (angleMatch) {
+      jsonStr = angleMatch[1]
+    }
+  }
+
+  // 格式3：方括号 [SYS]...[/SYS]
+  if (!jsonStr) {
+    const bracketMatch = text.match(/\[SYS\]\s*\n?([\s\S]*?)\n?\s*\[\/SYS\]/)
+    if (bracketMatch) {
+      jsonStr = bracketMatch[1]
+    }
+  }
+
+  if (!jsonStr) return null
   try {
-    const parsed = JSON.parse(match[1])
+    const parsed = JSON.parse(jsonStr)
+
+    // 向后兼容：旧格式 info_sufficient (boolean) → 映射为 info_sufficiency (number)
+    let info_sufficiency: number
+    if (typeof parsed.info_sufficiency === 'number') {
+      info_sufficiency = Math.max(0, Math.min(2, Math.round(parsed.info_sufficiency)))
+    } else if (typeof parsed.info_sufficient === 'boolean') {
+      info_sufficiency = parsed.info_sufficient ? 2 : 0
+    } else {
+      info_sufficiency = 0
+    }
+
     return {
       item_score_guess: typeof parsed.item_score_guess === 'number' ? parsed.item_score_guess : -1,
-      info_sufficient: parsed.info_sufficient === true,
+      info_sufficiency,
       risk_confirmed: parsed.risk_confirmed === true,
+      missing_dimensions: Array.isArray(parsed.missing_dimensions) ? parsed.missing_dimensions : undefined,
+      item_summary: parsed.item_summary || undefined,
     }
   } catch {
     return null
@@ -30,7 +88,10 @@ function parseSysBlock(text: string): SysAnalysis | null {
 }
 
 function stripSysBlock(text: string): string {
-  return text.replace(/<!--SYS\n[\s\S]*?\nSYS-->/g, '').trim()
+  return text.replace(/<!--SYS\n[\s\S]*?\nSYS-->/g, '')
+    .replace(/\[SYS\][\s\S]*?\[\/SYS\]/g, '')
+    .replace(/<<SYS>>[\s\S]*?<{1,2}\/SYS>{1,2}/g, '')
+    .trim()
 }
 
 // === 收尾话术（分级） ===
@@ -267,17 +328,9 @@ export async function POST(request: NextRequest) {
     user_context: updatedUserContext,
   })
 
-  // === 时间控制（12分钟提醒 / 15分钟强制收尾） ===
-  const elapsedMinutes = (Date.now() - session.session_started_at) / 60000
-  const timePressureNote = elapsedMinutes > 12
-    ? (elapsedMinutes > 15
-      ? '\n\n【时间提醒】对话已超过15分钟。请立即完成剩余话题——对每个还未覆盖的话题直接问一次，如果信息不足就在 SYS 中标记 info_sufficient=false。'
-      : `\n\n【时间提醒】对话已接近尾声（约${Math.round(elapsedMinutes)}分钟），请尽快完成剩余话题。`)
-    : ''
-
   const finalSystemPrompt = session.risk_status.intervened
-    ? systemPrompt + '\n[Note] User expressed difficult feelings earlier. Use a gentler tone, avoid probing risk details. Transition naturally to a lighter topic.' + timePressureNote
-    : systemPrompt + timePressureNote
+    ? systemPrompt + '\n[Note] User expressed difficult feelings earlier. Use a gentler tone, avoid probing risk details. Transition naturally to a lighter topic.'
+    : systemPrompt
 
   console.log('[COSMO chat] system prompt length:', finalSystemPrompt.length)
 
@@ -296,6 +349,7 @@ export async function POST(request: NextRequest) {
     },
     async (fullText: string, enqueue: (text: string) => void) => {
       // === 解析 AI 分析 JSON ===
+      console.log('[COSMO chat] RAW fullText:', fullText.substring(0, 500))
       const sys = parseSysBlock(fullText)
       const cleanReply = stripSysBlock(fullText)
 
@@ -328,10 +382,17 @@ export async function POST(request: NextRequest) {
       let lastCoverageUpdate = session.last_coverage_update
       let newItemAnswerQuality = { ...session.item_answer_quality }
       let newCurrentConfidenceScore = session.current_confidence_score
+      let newItemSummaries = [...session.item_summaries]
+      let newMissingDimensions: string[] = []
+      let newItemScoresInitial = { ...(session.item_scores_initial ?? {}) } as Record<string, number>
 
       if (session.phase === 'interview' && item) {
-        if (shouldTriggerQ9) {
-          // 高风险确认 → 触发 Q9 兜底
+        // Q9 已完成 → 不拦截（AI 在 SYS 中已确认无风险且信息充分）
+        const q9AlreadyCovered = updatedCoverage['Q9'] === 'answered'
+          || (sys?.info_sufficiency >= SUFFICIENCY_THRESHOLD && item.id === 'Q9' && sys?.risk_confirmed !== true)
+
+        if (shouldTriggerQ9 && !q9AlreadyCovered) {
+          // 路径 A：高风险确认 → Q9 兜底
           const q9Item = PHQ9.items[8]
           show_fallback = true
           fallback_item = q9Item.id
@@ -341,59 +402,118 @@ export async function POST(request: NextRequest) {
           newCurrentConfidenceScore = 0
           sessionReply = q9Item.fallback_prompt
           console.log('[COSMO chat] Risk confirmed — triggering Q9 fallback')
-        } else if (sys && !sys.info_sufficient && newItemRounds >= 1) {
-          // AI 判定信息不足 + 已追问过 → 硬兜底
-          show_fallback = true
-          fallback_item = item.id
-          fallback_options = [...item.fallback_options_original]
-          sessionReply = item.fallback_prompt
-          updatedCoverage[item.id as ItemId] = 'fallback'
-          newItemAnswerQuality[item.id as ItemId] = 'insufficient'
-          newItemRounds = 0
-          newFollowUpCount = 0
-          newCurrentConfidenceScore = 0
-          console.log(`[COSMO chat] Item ${item.id}: AI reports insufficient — triggering hard fallback`)
-        } else if (sys && !sys.info_sufficient && newItemRounds === 0) {
-          // AI 判定信息不足但刚第一轮问完 → 给一次追问机会
-          newItemRounds = 1
-          console.log(`[COSMO chat] Item ${item.id}: AI reports insufficient at first ask — allowing one probe`)
-        } else if (sys && sys.info_sufficient) {
-          // AI 判定信息充分 → 正常推进
-          updatedCoverage[item.id as ItemId] = 'answered'
-          newItemAnswerQuality[item.id as ItemId] = sys.item_score_guess >= 0 ? 'sufficient' : 'partial'
-          newCurrentItemIndex = Math.min(session.current_item_index + 1, 8)
-          newItemRounds = 0
-          newFollowUpCount = 0
-          lastCoverageUpdate = { item: item.id as ItemId, status: 'answered' }
-          console.log(`[COSMO chat] Item ${item.id}: AI reports sufficient — advancing to ${newCurrentItemIndex}`)
-        } else if (!sys && newItemRounds >= 1) {
-          // SYS 解析失败 + 已追问 → 代码层模糊检测兜底
-          const vagueness = detectAnswerVagueness(userMessage)
-          newCurrentConfidenceScore = vagueness.confidenceScore
+        } else if (sys) {
+          // ===== AI SYS 块存在 =====
+          const suff = sys.info_sufficiency
 
-          if (vagueness.isVague && vagueness.confidenceScore <= 1) {
+          if (suff >= SUFFICIENCY_THRESHOLD) {
+            // 信息充分（info_sufficiency >= 2）→ 正常推进
+            updatedCoverage[item.id as ItemId] = 'answered'
+            newItemAnswerQuality[item.id as ItemId] = sys.item_score_guess >= 0 ? 'sufficient' : 'partial'
+            newCurrentItemIndex = Math.min(session.current_item_index + 1, 8)
+            newItemRounds = 0
+            newFollowUpCount = 0
+            lastCoverageUpdate = { item: item.id as ItemId, status: 'answered' }
+            // Phase 1：存储逐项初评分（item_score_guess >= 0 才写入，-1 不写入）
+            if (sys.item_score_guess >= 0) {
+              newItemScoresInitial[item.id] = sys.item_score_guess
+            }
+            // Phase 3：收集条目摘要
+            if (sys.item_summary?.summary) {
+              newItemSummaries = collectItemSummary(session, item.id, sys.item_summary)
+            }
+            console.log(`[COSMO chat] Item ${item.id}: info_sufficiency=${suff} — advancing to ${newCurrentItemIndex}`)
+          } else if (newItemRounds < MAX_ITEM_ROUNDS) {
+            // 信息不足 + 还有追问额度 → 追问
+            newItemRounds = newItemRounds + 1
+            newMissingDimensions = sys.missing_dimensions ?? []
+            console.log(`[COSMO chat] Item ${item.id}: info_sufficiency=${suff}, rounds ${session.item_rounds}→${newItemRounds} — probing with dims: ${newMissingDimensions.join(',') || 'none'}`)
+          } else {
+            // 信息不足 + 追问额度用尽
+            if (suff === 1) {
+              // 部分信息 → forced-choice（LLM 生成二选一，不兜底）
+              newItemRounds = newItemRounds + 1
+              console.log(`[COSMO chat] Item ${item.id}: partial info, rounds exhausted — triggering forced-choice`)
+            } else {
+              // suff === 0 → 硬兜底
+              show_fallback = true
+              fallback_item = item.id
+              fallback_options = [...item.fallback_options_original]
+              sessionReply = item.fallback_prompt
+              updatedCoverage[item.id as ItemId] = 'fallback'
+              newItemAnswerQuality[item.id as ItemId] = 'fallback'
+              newItemRounds = 0
+              newFollowUpCount = 0
+              newCurrentConfidenceScore = 0
+              console.log(`[COSMO chat] Item ${item.id}: info_sufficiency=0, rounds exhausted — triggering hard fallback`)
+            }
+          }
+        } else {
+          // ===== SYS 缺失 =====
+          if (newItemRounds === 0) {
+            // 第一轮，等 AI 追问
+            newItemRounds = 1
+            console.log(`[COSMO chat] Item ${item.id}: SYS missing, waiting for AI to probe`)
+          } else {
+            // 已追问，代码层兜底
+            const vagueness = detectAnswerVagueness(userMessage)
+            newCurrentConfidenceScore = vagueness.confidenceScore
+            if (vagueness.isVague && vagueness.confidenceScore <= 1) {
+              show_fallback = true
+              fallback_item = item.id
+              fallback_options = [...item.fallback_options_original]
+              sessionReply = item.fallback_prompt
+              updatedCoverage[item.id as ItemId] = 'fallback'
+              newItemAnswerQuality[item.id as ItemId] = 'fallback'
+              newItemRounds = 0
+              newFollowUpCount = 0
+              console.log(`[COSMO chat] Item ${item.id}: SYS missing + code-layer force fallback (confidence=${vagueness.confidenceScore})`)
+            } else {
+              updatedCoverage[item.id as ItemId] = 'answered'
+              newItemAnswerQuality[item.id as ItemId] = vagueness.confidenceScore >= 4 ? 'sufficient' : 'partial'
+              newCurrentItemIndex = Math.min(session.current_item_index + 1, 8)
+              newItemRounds = 0
+              newFollowUpCount = 0
+              lastCoverageUpdate = { item: item.id as ItemId, status: 'answered' }
+              console.log(`[COSMO chat] Item ${item.id}: SYS missing but code-layer passes — advancing to ${newCurrentItemIndex}`)
+            }
+          }
+        }
+
+        // forced-choice 后仍无法确定 → 硬兜底
+        if (!show_fallback && newItemRounds > MAX_ITEM_ROUNDS) {
+          const fcVagueness = detectAnswerVagueness(userMessage)
+          if (fcVagueness.isVague && fcVagueness.confidenceScore <= 1) {
             show_fallback = true
             fallback_item = item.id
             fallback_options = [...item.fallback_options_original]
             sessionReply = item.fallback_prompt
             updatedCoverage[item.id as ItemId] = 'fallback'
-            newItemAnswerQuality[item.id as ItemId] = 'insufficient'
+            newItemAnswerQuality[item.id as ItemId] = 'fallback'
             newItemRounds = 0
-            newFollowUpCount = 0
-            console.log(`[COSMO chat] Item ${item.id}: SYS missing + code-layer force fallback (confidence=${vagueness.confidenceScore})`)
+            newCurrentConfidenceScore = 0
+            // Phase 3：forced-choice 后兜底也收集摘要（如有）
+            if (sys?.item_summary?.summary) {
+              newItemSummaries = collectItemSummary(session, item.id, sys.item_summary)
+            }
+            console.log(`[COSMO chat] Item ${item.id}: forced-choice failed — triggering hard fallback`)
           } else {
+            // forced-choice 后学生给出了有一定信息量的回答 → 推进覆盖
             updatedCoverage[item.id as ItemId] = 'answered'
-            newItemAnswerQuality[item.id as ItemId] = vagueness.confidenceScore >= 4 ? 'sufficient' : 'partial'
+            newItemAnswerQuality[item.id as ItemId] = 'partial'
             newCurrentItemIndex = Math.min(session.current_item_index + 1, 8)
             newItemRounds = 0
             newFollowUpCount = 0
+            newCurrentConfidenceScore = fcVagueness.confidenceScore
             lastCoverageUpdate = { item: item.id as ItemId, status: 'answered' }
-            console.log(`[COSMO chat] Item ${item.id}: SYS missing but code-layer passes — advancing to ${newCurrentItemIndex}`)
+            if (sys?.item_score_guess != null && sys.item_score_guess >= 0) {
+              newItemScoresInitial[item.id] = sys.item_score_guess
+            }
+            if (sys?.item_summary?.summary) {
+              newItemSummaries = collectItemSummary(session, item.id, sys.item_summary)
+            }
+            console.log(`[COSMO chat] Item ${item.id}: forced-choice passed (confidence=${fcVagueness.confidenceScore}) — advancing to ${newCurrentItemIndex}`)
           }
-        } else if (!sys && newItemRounds === 0) {
-          // SYS 解析失败 + 第一轮 → 等 AI 追问
-          newItemRounds = 1
-          console.log(`[COSMO chat] Item ${item.id}: SYS missing, waiting for AI to probe`)
         }
       }
 
@@ -468,6 +588,9 @@ export async function POST(request: NextRequest) {
         },
         item_answer_quality: newItemAnswerQuality,
         current_confidence_score: newCurrentConfidenceScore,
+        missing_dimensions: newMissingDimensions,
+        item_summaries: newItemSummaries,
+        item_scores_initial: newItemScoresInitial as Partial<Record<ItemId, number>>,
         messages: [
           ...updatedMessages,
           { role: 'assistant', content: sessionReply, timestamp: now },
@@ -587,6 +710,10 @@ async function handleFallbackScore(
   const updatedFallbackScores: FallbackScores = { ...session.fallback_scores }
   updatedFallbackScores[fallbackItem as ItemId] = fallbackScore
 
+  // Phase 1：兜底条目也写入初评分，确保每条目都有 item_scores_initial
+  const updatedItemScoresInitial = { ...(session.item_scores_initial ?? {}) } as Record<string, number>
+  updatedItemScoresInitial[fallbackItem] = fallbackScore
+
   const now = Date.now()
 
   const updatedMessages: SessionState['messages'] = [
@@ -610,6 +737,7 @@ async function handleFallbackScore(
       item_rounds: 0,
       follow_up_count: 0,
       fallback_scores: updatedFallbackScores,
+      item_scores_initial: updatedItemScoresInitial as Partial<Record<ItemId, number>>,
       messages: [
         ...updatedMessages,
         { role: 'assistant', content: closingMessage, timestamp: now },
@@ -669,6 +797,7 @@ async function handleFallbackScore(
     item_rounds: 1,
     follow_up_count: 0,
     fallback_scores: updatedFallbackScores,
+    item_scores_initial: updatedItemScoresInitial as Partial<Record<ItemId, number>>,
     asked_questions: updatedAskedQuestions,
     risk_status: {
       ...session.risk_status,
@@ -733,4 +862,28 @@ async function callAi(
 
 function isValidItemId(id: string): id is ItemId {
   return ['Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6', 'Q7', 'Q8', 'Q9'].includes(id)
+}
+
+// === Phase 3：条目摘要收集 ===
+function collectItemSummary(
+  _session: SessionState,
+  itemId: string,
+  summary: NonNullable<SysAnalysis['item_summary']>
+): SessionState['item_summaries'] {
+  const sessionSummaries = _session.item_summaries ?? []
+  return [
+    ...sessionSummaries,
+    {
+      item_id: itemId as ItemId,
+      summary: summary.summary || '',
+      dimensions: {
+        emotion: summary.emotion || '',
+        frequency: summary.frequency || '',
+        duration: summary.duration || '',
+        symptom: summary.symptom || '',
+        impact: summary.impact || '',
+      },
+      recorded_at: Date.now(),
+    },
+  ]
 }
