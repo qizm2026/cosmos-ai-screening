@@ -78,6 +78,32 @@ const allCovered = Object.values(updatedCoverage).every(
 
 只有当 Q1~Q9 全部覆盖后，`is_done` 才为 `true`。`handleFallbackScore` 和 `handleRiskContinue` 的 `allCovered` 路径使用 JSON 响应（非流式）确保可靠送达。
 
+### 遗漏条目安全网（P0-2）
+
+`allCovered` 判定前执行双层防护：
+
+1. **跳跃回补**（第一层）：`current_item_index` 走完 9 条目后自动检查是否还有 pending 条目——有则跳回该条目索引，防止 AI 推进时意外跳过
+2. **二次校验**（第二层）：即使 `allCovered === true`，仍需检查 `stillPending`——过滤出 coverage 中仍为 `'pending'` 的条目，仅当 `stillPending.length === 0` 时才真正标记 `is_done`（案例4 Q4/Q7 遗漏修复）
+
+```typescript
+// 第一层：跳跃回补
+if (newPhase === 'interview' && newCurrentItemIndex >= 8) {
+  const anyPending = (Object.keys(updatedCoverage) as ItemId[])
+    .find(k => updatedCoverage[k] === 'pending')
+  if (anyPending) { newCurrentItemIndex = PHQ9.items.findIndex(it => it.id === anyPending) }
+}
+
+// 第二层：stillPending 二次校验
+const stillPending = (Object.keys(updatedCoverage) as ItemId[])
+  .filter(k => updatedCoverage[k] === 'pending')
+const allCovered = Object.values(updatedCoverage).every(s => s === 'answered' || s === 'fallback')
+const isDone = allCovered && stillPending.length === 0
+```
+
+### Q9 后兜底补问链
+
+Q9 通过兜底提交完成后，`handleFallbackScore` 中 `isPostRiskSoothing` 分支自动检查非 Q9 的 pending 条目。若有，跳过 3 轮缓和阶段，链式逐个弹出兜底选择题，直到全部覆盖。此机制防止高风险处理路径"吞噬"其他条目的覆盖空间，避免未聊条目被硬置 0 分（案例4 Q4/Q7 零分修复）。
+
 ## 兜底机制
 
 ### AI 分析（SYS 块）+ 代码层统一决策
@@ -99,7 +125,14 @@ SYS-->
 | `info_sufficiency === 0` + 额度用尽 | **硬兜底**（直接展示原题 + 四个频率选项） |
 | `risk_confirmed === true` | 触发 Q9 兜底 + 3 轮缓和 |
 
-Forced-choice 后再失败（用户仍模糊）→ 也触发硬兜底。
+### Forced-choice 后失败处理
+
+Forced-choice（LLM 生成二选一）后学生回答仍模糊时，代码层执行二次检测：
+
+1. `newItemRounds > MAX_ITEM_ROUNDS`（追问额度已用尽）且 `detectAnswerVagueness` 判定 `isVague && confidenceScore <= 1` → 触发硬兜底（PHQ-9 原题 + 四选项）
+2. 如果 forced-choice 后学生给出了一定信息量（`confidenceScore >= 2`）→ 正常推进覆盖，标记 `'partial'` 质量
+
+此逻辑在 SYS 块解析和 SYS 缺失两条路径后统一执行（`app/api/chat/route.ts` 第487–521行），确保 forced-choice 失败后仍有硬兜底作为最终保护层。
 
 SYS 解析失败时，`detectAnswerVagueness()`（极短回答/模糊模式检测）作为 fallback。
 
@@ -121,6 +154,8 @@ const SUFFICIENCY_THRESHOLD = 2 // info_sufficiency >= 2 才推进（对标 Agen
 
 ### 向后兼容
 `parseSysBlock()` 自动兼容旧格式 `info_sufficient: boolean` → 映射为 `info_sufficiency: 0 | 2`。
+
+**SYS 解析兼容性**：Q9 覆盖状态检查中 `sys?.info_sufficiency` 增加了 `?? 0` 空值保护（TS18048 修复），避免 `undefined` 与 `SUFFICIENCY_THRESHOLD` 比较导致意外行为。
 
 ## Phase 3：条目摘要与上下文感知
 
@@ -178,6 +213,8 @@ SYS 块 item_score_guess → session.item_scores_initial
 - **`matched_anchor_index` 优先于 `score`**：锚点索引作为最终得分（对标 HopeBot/BDI-FS-GPT 评分解耦）
 - **`answer_quality` 硬钳位**：`insufficient` 条目强制置 0（与 prompt 层双重保险）；`partial` 条目标记但不强制钳位
 - **Q9 特殊规则**：任何非零得分 → `risk_level` 强制 `severe`
+- **`max_tokens=8192`**：评分接口的 `max_tokens` 从 4096 提升至 8192，容纳 PsyCoT 三步推理 + 全局校准完整 JSON 输出（含逐条 symptom_evidence / severity_judgment / calibration_note 等字段），解决长响应截断的 500 错误 (N-3)
+- **Q8 情境归因排除规则**：评分 Prompt Step 2 中新增 Q8 专用规则——区分情境性反应（学业压力/考试/作业量 → 锚点 0–1，锚点 1 上限）vs 临床精神运动改变（锚点 2–3 需满足：无外部归因 + 他人注意到 + 持续存在）；明确排除伪信号——写作业慢（题难/不想做）≠ 精神运动迟缓
 - **兜底得分直接使用**：`fallback_scores` 不参与语义判断，直接写入
 - **评分结果缓存**：`session.score_result` 存在时直接返回，避免重复调用
 
@@ -234,3 +271,7 @@ Prompt 的动态段包括：
 ## 报告页缓存
 
 `app/report/page.tsx` — 模块级 `reportCache`（Map），同一 session 二次进入直接从缓存读取，不重复调评分/报告 API。
+
+## 优化记录
+
+每次优化的详细记录（问题、方案、改动文件、验证结果）见 `tech/优化记录.md`。

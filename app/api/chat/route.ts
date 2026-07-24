@@ -391,7 +391,7 @@ export async function POST(request: NextRequest) {
         // 同时覆盖 autoRiskConfirmed（代码层二次命中）路径——Q9 已通过正常流程覆盖或 SYS 判定充分时不拦截
         const q9AlreadyDone = updatedCoverage['Q9'] === 'answered'
           || updatedCoverage['Q9'] === 'fallback'
-          || (sys?.info_sufficiency >= SUFFICIENCY_THRESHOLD && item.id === 'Q9' && sys?.risk_confirmed !== true)
+          || ((sys?.info_sufficiency ?? 0) >= SUFFICIENCY_THRESHOLD && item.id === 'Q9' && sys?.risk_confirmed !== true)
 
         if (shouldTriggerQ9 && !q9AlreadyDone) {
           // 路径 A：高风险确认 → Q9 兜底
@@ -548,12 +548,17 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // === P0-2：覆盖完成后二次校验 — 仍有 pending 则触发兜底而非 done ===
+      // 防止"被标记 answered 但实际从未聊到"的条目被遗漏（案例4 Q4/Q7 问题）
+      const stillPending = (Object.keys(updatedCoverage) as ItemId[])
+        .filter(k => updatedCoverage[k] === 'pending')
+
       const allCovered = Object.values(updatedCoverage).every(
         (s) => s === 'answered' || s === 'fallback'
       )
 
       let isDone = false
-      if (allCovered) {
+      if (allCovered && stillPending.length === 0) {
         newPhase = 'done'
         isDone = true
         const closingMsg = getClosingMessage(session.risk_status)
@@ -771,6 +776,57 @@ async function handleFallbackScore(
     item_rounds: 0,
     follow_up_count: 0,
   }
+
+  // === P0-2：Q9 兜底后强制补问遗漏的非 Q9 条目 ===
+  // 避免高风险处理路径"吞噬"其他条目的覆盖空间（案例4：Q4/Q7 因未覆盖被硬置0）
+  if (isPostRiskSoothing) {
+    const pendingNonQ9 = (Object.keys(updatedCoverage) as ItemId[])
+      .filter(k => k !== 'Q9' && updatedCoverage[k] === 'pending')
+    if (pendingNonQ9.length > 0) {
+      const nextId = pendingNonQ9[0]
+      const nextItem = PHQ9.items.find(i => i.id === nextId)!
+      const nextIndex = PHQ9.items.findIndex(i => i.id === nextId)
+
+      const transitionReply = '刚才聊的那些确实挺重的，谢谢你愿意跟我说。接下来我们再快速确认几个方面——'
+
+      updateSession(sessionId, {
+        phase: session.phase,
+        round: session.round + 1,
+        coverage: updatedCoverage,
+        last_coverage_update: { item: fallbackItem as ItemId, status: 'fallback' },
+        current_item_index: nextIndex,
+        item_rounds: 0,
+        follow_up_count: 0,
+        fallback_scores: updatedFallbackScores,
+        item_scores_initial: updatedItemScoresInitial as Partial<Record<ItemId, number>>,
+        asked_questions: session.asked_questions,
+        risk_status: {
+          ...session.risk_status,
+          intervened: true,
+          soothing_rounds: 0,  // 跳过缓和，直接进入补问
+        },
+        messages: [
+          ...updatedMessages,
+          { role: 'assistant', content: transitionReply, timestamp: now },
+        ],
+      })
+
+      console.log(`[COSMO chat] Post-Q9: pending ${nextId} at index ${nextIndex} — chaining fallback (${pendingNonQ9.length} items remain)`)
+
+      return createStreamResponse(transitionReply, {
+        show_fallback: true,
+        fallback_item: nextItem.id,
+        fallback_options: [...nextItem.fallback_options_original],
+        is_done: false,
+        risk_detected: false,
+        risk_type: null,
+        risk_intervention: null,
+        pause_message: null,
+        hotline: null,
+      })
+    }
+  }
+
   const systemPrompt = buildChatSystemPrompt(preUpdateSession)
 
   const finalSystemPrompt = isPostRiskSoothing

@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
         { role: 'user', content: `对话记录：\n${conversationText}\n\n请根据以上对话对 9 个条目逐一评分。` },
       ],
       temperature: 0.2,
-      max_tokens: 4096,
+      max_tokens: 8192,
       useThinking: false,
     })
   } catch (e) {

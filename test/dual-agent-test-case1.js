@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * COSMO 双Agent自动化测试 — 案例一：林晓阳（正常范围，期望3分）
+ * COSMO 双Agent自动化测试 — 案例一：林晓阳（正常范围，期望1分）
  *
  * User Agent: DeepSeek API 扮演13岁初中生林晓阳
  * COSMO Agent: localhost:3000 的现有系统
@@ -172,7 +172,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
 async function main() {
   console.log('='.repeat(60))
-  console.log('COSMO 双Agent测试 — 案例一：林晓阳（正常范围，期望3分）')
+  console.log('COSMO 双Agent测试 — 案例一：林晓阳（正常范围，期望1分）')
   console.log(`开始: ${new Date().toLocaleString('zh-CN')}`)
   console.log('='.repeat(60))
 
@@ -386,7 +386,7 @@ function printReport(chatHistory, sysLog, score, report) {
   console.log('█' + ' '.repeat(22) + '测试报告' + ' '.repeat(24) + '█')
   console.log('█'.repeat(70))
   console.log(`测试时间: ${new Date().toLocaleString('zh-CN')}`)
-  console.log(`测试对象: 案例一 — 林晓阳（正常范围，期望3分）`)
+  console.log(`测试对象: 案例一 — 林晓阳（正常范围，期望1分）`)
   console.log(`测试方式: 双Agent对话 — User Agent (DeepSeek) × COSMO Agent`)
   console.log()
 
